@@ -1,0 +1,450 @@
+// ==============================================================================
+// PARISAR REST API Backend Server
+// Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar, Madhya Pradesh
+// ==============================================================================
+
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
+
+const {
+  USERS,
+  VENUES,
+  EVENTS,
+  REGISTRATIONS,
+  ATTENDANCE,
+  CERTIFICATES,
+  ACHIEVEMENTS
+} = require('./data/dhsgsuData');
+
+const app = express();
+const PORT = process.env.PORT || 10000;
+const JWT_SECRET = process.env.JWT_SECRET || 'parisar_dhsgsu_jwt_secret_2026';
+
+// Middleware
+app.use(cors({
+  origin: '*', // Allow Web portal & Mobile APK clients
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json());
+
+// In-Memory Data Store (Initialized with authentic DHSGSU data)
+let dbUsers = [...USERS];
+let dbVenues = [...VENUES];
+let dbEvents = [...EVENTS];
+let dbRegistrations = [...REGISTRATIONS];
+let dbAttendance = [...ATTENDANCE];
+let dbCertificates = [...CERTIFICATES];
+let dbNotifications = [];
+
+// MongoDB Atlas Connection (Optional / Progressive Enhancement)
+let isMongoConnected = false;
+if (process.env.MONGODB_URI) {
+  console.log('Connecting to MongoDB Atlas...');
+  mongoose.connect(process.env.MONGODB_URI)
+    .then(() => {
+      isMongoConnected = true;
+      console.log('Connected successfully to MongoDB Atlas (parisar_dhsgsu)');
+    })
+    .catch(err => {
+      console.warn('MongoDB connection failed, falling back to persistent in-memory store:', err.message);
+    });
+} else {
+  console.log('No MONGODB_URI provided. Running on DHSGSU in-memory dataset.');
+}
+
+// ------------------------------------------------------------------------------
+// Root & Health Check Endpoints (for Render Health Checks)
+// ------------------------------------------------------------------------------
+app.get(['/', '/health'], (req, res) => {
+  res.status(200).json({
+    service: 'PARISAR REST API',
+    institution: 'Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.)',
+    version: '1.0.0',
+    status: 'ONLINE',
+    timestamp: new Date().toISOString(),
+    database: isMongoConnected ? 'MONGODB_ATLAS' : 'IN_MEMORY_DHSGSU_STORE',
+    endpoints: {
+      auth: '/api/v1/auth/login',
+      events: '/api/v1/events',
+      venues: '/api/v1/venues',
+      registrations: '/api/v1/registrations',
+      attendance: '/api/v1/attendance',
+      announcements: '/api/v1/announcements',
+      certificates: '/api/v1/certificates',
+      passport: '/api/v1/passport'
+    }
+  });
+});
+
+// ------------------------------------------------------------------------------
+// Authentication Routes (/api/v1/auth)
+// ------------------------------------------------------------------------------
+app.post('/api/v1/auth/login', (req, res) => {
+  const { email, rollNumber, userId } = req.body;
+  
+  let user = null;
+  if (email) {
+    user = dbUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
+  } else if (rollNumber) {
+    user = dbUsers.find(u => u.rollNumber && u.rollNumber.toLowerCase() === rollNumber.toLowerCase());
+  } else if (userId) {
+    user = dbUsers.find(u => u._id === userId);
+  } else {
+    // Default to Amit Sharma for seamless testing
+    user = dbUsers[0];
+  }
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'Student or faculty user not found in DHSGSU directory.'
+    });
+  }
+
+  const token = jwt.sign(
+    { userId: user._id, role: user.role, email: user.email },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  res.status(200).json({
+    success: true,
+    data: {
+      token,
+      user
+    }
+  });
+});
+
+app.get('/api/v1/auth/users', (req, res) => {
+  res.status(200).json({
+    success: true,
+    data: dbUsers
+  });
+});
+
+// ------------------------------------------------------------------------------
+// Venues Routes (/api/v1/venues)
+// ------------------------------------------------------------------------------
+app.get('/api/v1/venues', (req, res) => {
+  res.status(200).json({
+    success: true,
+    data: dbVenues
+  });
+});
+
+// ------------------------------------------------------------------------------
+// Events Routes (/api/v1/events)
+// ------------------------------------------------------------------------------
+app.get('/api/v1/events', (req, res) => {
+  const { category, status, search, venueId } = req.query;
+  
+  let results = [...dbEvents];
+  
+  if (status && status !== 'ALL') {
+    results = results.filter(e => e.status === status);
+  }
+  if (category && category !== 'ALL') {
+    results = results.filter(e => e.category.toLowerCase() === category.toLowerCase());
+  }
+  if (venueId) {
+    results = results.filter(e => e.venueId === venueId);
+  }
+  if (search) {
+    const q = search.toLowerCase();
+    results = results.filter(e => 
+      e.title.toLowerCase().includes(q) ||
+      e.description.toLowerCase().includes(q) ||
+      e.venue.toLowerCase().includes(q) ||
+      (e.tags && e.tags.some(t => t.toLowerCase().includes(q)))
+    );
+  }
+
+  res.status(200).json({
+    success: true,
+    count: results.length,
+    data: results
+  });
+});
+
+app.get('/api/v1/events/:id', (req, res) => {
+  const event = dbEvents.find(e => e._id === req.params.id);
+  if (!event) {
+    return res.status(404).json({ success: false, message: 'Event not found' });
+  }
+  res.status(200).json({ success: true, data: event });
+});
+
+app.post('/api/v1/events', (req, res) => {
+  const newEvent = {
+    _id: `evt-${Date.now()}`,
+    title: req.body.title || 'Untitled University Event',
+    description: req.body.description || 'Event organized through PARISAR • DHSGSU.',
+    category: req.body.category || 'Workshop',
+    organizerId: req.body.organizerId || 'org-1',
+    organizerName: req.body.organizerName || 'Dr. Alok Sahay',
+    organizerEmail: req.body.organizerEmail || 'alok.sahay@dhsgsu.edu.in',
+    venue: req.body.venue || 'Swarna Jayanti Auditorium',
+    venueId: req.body.venueId || 'venue-swarna-jayanti',
+    startTime: req.body.startTime || new Date().toISOString(),
+    endTime: req.body.endTime || new Date(Date.now() + 3600000 * 3).toISOString(),
+    capacity: parseInt(req.body.capacity, 10) || 100,
+    registrationCount: 0,
+    registrationDeadline: req.body.registrationDeadline || new Date(Date.now() + 86400000).toISOString(),
+    tags: req.body.tags || ['DHSGSU', 'Campus'],
+    coverImage: req.body.coverImage || 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80',
+    status: req.body.status || 'PUBLISHED',
+    eligibility: req.body.eligibility || 'Open to all enrolled students of DHSGSU',
+    specialInstructions: req.body.specialInstructions || 'Bring university ID card.',
+    departmentScope: req.body.departmentScope || 'University Campus',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  dbEvents.unshift(newEvent);
+  res.status(201).json({ success: true, data: newEvent });
+});
+
+// ------------------------------------------------------------------------------
+// Registrations & Digital Pass Routes (/api/v1/registrations)
+// ------------------------------------------------------------------------------
+app.post('/api/v1/registrations', (req, res) => {
+  const { eventId, userId } = req.body;
+  
+  const event = dbEvents.find(e => e._id === eventId);
+  if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+  
+  const user = dbUsers.find(u => u._id === (userId || 'student-1')) || dbUsers[0];
+  
+  // Check existing registration
+  const existing = dbRegistrations.find(r => r.eventId === eventId && r.userId === user._id && r.status === 'CONFIRMED');
+  if (existing) {
+    return res.status(200).json({
+      success: true,
+      message: 'Already registered for this event',
+      data: existing
+    });
+  }
+
+  // Check capacity
+  if (event.registrationCount >= event.capacity) {
+    return res.status(400).json({ success: false, message: 'Event capacity reached.' });
+  }
+
+  const prefix = event.category.substring(0, 2).toUpperCase();
+  const rollSuffix = user.rollNumber ? user.rollNumber.slice(-5) : '00001';
+  const qrToken = `PARISAR-PASS-${prefix}-${rollSuffix}`;
+
+  const newReg = {
+    _id: `reg-${Date.now()}`,
+    eventId: event._id,
+    userId: user._id,
+    userName: user.name,
+    userRollNumber: user.rollNumber || 'N/A',
+    userDepartment: user.department,
+    userEmail: user.email,
+    status: 'CONFIRMED',
+    registeredAt: new Date().toISOString(),
+    qrToken,
+    checkedInAt: null,
+  };
+
+  dbRegistrations.unshift(newReg);
+  event.registrationCount += 1;
+
+  res.status(201).json({
+    success: true,
+    message: 'Registration confirmed. Digital pass generated.',
+    data: newReg
+  });
+});
+
+app.get('/api/v1/registrations/my', (req, res) => {
+  const userId = req.query.userId || 'student-1';
+  const myRegs = dbRegistrations.filter(r => r.userId === userId && r.status === 'CONFIRMED');
+  
+  const populated = myRegs.map(r => ({
+    registration: r,
+    event: dbEvents.find(e => e._id === r.eventId) || null
+  }));
+
+  res.status(200).json({
+    success: true,
+    count: populated.length,
+    data: populated
+  });
+});
+
+// ------------------------------------------------------------------------------
+// Turnstile Optical QR Scanner Routes (/api/v1/attendance)
+// ------------------------------------------------------------------------------
+app.post('/api/v1/attendance/verify', (req, res) => {
+  const { eventId, qrToken, method } = req.body;
+  
+  if (!qrToken || !eventId) {
+    return res.status(400).json({
+      status: 'INVALID',
+      message: 'Both Event ID and QR Token are required.'
+    });
+  }
+
+  // Find registration across all events by token
+  const matchedReg = dbRegistrations.find(r => r.qrToken === qrToken.trim());
+  
+  if (!matchedReg) {
+    return res.status(200).json({
+      status: 'INVALID',
+      message: 'Unrecognized or counterfeit QR pass. Token does not exist in university records.'
+    });
+  }
+
+  // Check if token belongs to another event
+  if (matchedReg.eventId !== eventId) {
+    const wrongEvent = dbEvents.find(e => e._id === matchedReg.eventId);
+    return res.status(200).json({
+      status: 'WRONG_EVENT',
+      message: `Pass is valid, but issued for "${wrongEvent ? wrongEvent.title : matchedReg.eventId}", not this session.`,
+      attendee: {
+        name: matchedReg.userName,
+        rollNumber: matchedReg.userRollNumber,
+        department: matchedReg.userDepartment
+      }
+    });
+  }
+
+  // Check duplicate scan
+  if (matchedReg.checkedInAt) {
+    return res.status(200).json({
+      status: 'DUPLICATE',
+      message: `Attendee ${matchedReg.userName} already checked in at ${new Date(matchedReg.checkedInAt).toLocaleTimeString()}. Entrance denied.`,
+      checkedInAt: matchedReg.checkedInAt,
+      attendee: {
+        name: matchedReg.userName,
+        rollNumber: matchedReg.userRollNumber,
+        department: matchedReg.userDepartment
+      }
+    });
+  }
+
+  // Success Check-in
+  const now = new Date().toISOString();
+  matchedReg.checkedInAt = now;
+
+  const attendanceRecord = {
+    _id: `att-${Date.now()}`,
+    eventId,
+    registrationId: matchedReg._id,
+    userId: matchedReg.userId,
+    userName: matchedReg.userName,
+    userRollNumber: matchedReg.userRollNumber,
+    userDepartment: matchedReg.userDepartment,
+    checkedInAt: now,
+    checkedInBy: 'org-1',
+    method: method || 'qr'
+  };
+
+  dbAttendance.unshift(attendanceRecord);
+
+  return res.status(200).json({
+    status: 'SUCCESS',
+    message: `Attendance verified! Welcome, ${matchedReg.userName}. Entrance granted.`,
+    checkedInAt: now,
+    attendee: {
+      name: matchedReg.userName,
+      rollNumber: matchedReg.userRollNumber,
+      department: matchedReg.userDepartment
+    }
+  });
+});
+
+app.get('/api/v1/attendance/:eventId', (req, res) => {
+  const records = dbAttendance.filter(a => a.eventId === req.params.eventId);
+  res.status(200).json({
+    success: true,
+    count: records.length,
+    data: records
+  });
+});
+
+// ------------------------------------------------------------------------------
+// Announcements Route (/api/v1/announcements)
+// ------------------------------------------------------------------------------
+app.post('/api/v1/announcements', (req, res) => {
+  const { eventId, title, message } = req.body;
+  const event = dbEvents.find(e => e._id === eventId);
+  const attendees = dbRegistrations.filter(r => r.eventId === eventId && r.status === 'CONFIRMED');
+
+  attendees.forEach(att => {
+    dbNotifications.unshift({
+      _id: `notif-${Date.now()}-${att.userId}`,
+      userId: att.userId,
+      eventId,
+      type: 'ANNOUNCEMENT',
+      title: title || 'Urgent Event Notice',
+      message: message || '',
+      read: false,
+      createdAt: new Date().toISOString()
+    });
+  });
+
+  res.status(200).json({
+    success: true,
+    message: `Dispatched announcement to ${attendees.length} registered students.`,
+    data: attendees.length
+  });
+});
+
+// ------------------------------------------------------------------------------
+// Certificates Route (/api/v1/certificates)
+// ------------------------------------------------------------------------------
+app.get('/api/v1/certificates', (req, res) => {
+  const { userId } = req.query;
+  let certs = [...dbCertificates];
+  if (userId) {
+    certs = certs.filter(c => c.userId === userId);
+  }
+  res.status(200).json({
+    success: true,
+    count: certs.length,
+    data: certs
+  });
+});
+
+// ------------------------------------------------------------------------------
+// Student Event Passport Route (/api/v1/passport)
+// ------------------------------------------------------------------------------
+app.get('/api/v1/passport', (req, res) => {
+  const userId = req.query.userId || 'student-1';
+  const user = dbUsers.find(u => u._id === userId) || dbUsers[0];
+  const myAttendance = dbAttendance.filter(a => a.userId === userId);
+  const totalHours = myAttendance.length * 4;
+
+  res.status(200).json({
+    success: true,
+    data: {
+      user,
+      totalHours,
+      attendedEventsCount: myAttendance.length,
+      achievements: ACHIEVEMENTS,
+      timeline: myAttendance.map(att => ({
+        eventTitle: dbEvents.find(e => e._id === att.eventId)?.title || 'Campus Event',
+        venue: dbEvents.find(e => e._id === att.eventId)?.venue || 'Patharia Hills Campus',
+        checkedInAt: att.checkedInAt
+      }))
+    }
+  });
+});
+
+// Start Server
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`====================================================`);
+  console.log(`PARISAR REST API Server running on port ${PORT}`);
+  console.log(`URL: http://localhost:${PORT}`);
+  console.log(`Health Check: http://localhost:${PORT}/health`);
+  console.log(`Institution: Dr. Harisingh Gour Vishwavidyalaya (DHSGSU)`);
+  console.log(`====================================================`);
+});

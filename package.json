@@ -9,9 +9,11 @@
     "url": "https://github.com/itsxmit1503/Parisar.git"
   },
   "scripts": {
-    "dev": "npm --prefix web run dev",
-    "build": "npm --prefix web run build",
-    "start": "npm --prefix web run start",
-    "lint": "npm --prefix web run lint"
+    "start": "node server/index.js",
+    "server": "node server/index.js",
+    "server:install": "npm --prefix server install",
+    "web:dev": "npm --prefix web run dev",
+    "web:build": "npm --prefix web run build",
+    "web:start": "npm --prefix web run start"
   }
 }
