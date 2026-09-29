@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">PARISAR</string>
+    <string name="offline_title">Campus Network Offline</string>
+    <string name="offline_message">Unable to connect to the DHSGSU campus servers. Check your cellular or Patharia Hills Wi-Fi connection.</string>
+    <string name="retry">Retry Connection</string>
+</resources>

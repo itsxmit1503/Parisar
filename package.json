@@ -9,6 +9,7 @@
     "url": "https://github.com/itsxmit1503/Parisar.git"
   },
   "scripts": {
+    "build": "npm --prefix web install && npm --prefix web run build",
     "start": "node server/index.js",
     "server": "node server/index.js",
     "server:install": "npm --prefix server install",
