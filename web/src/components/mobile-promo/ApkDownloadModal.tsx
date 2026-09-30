@@ -13,7 +13,8 @@ import {
   Camera, 
   WifiOff, 
   Bell, 
-  FileCode2
+  FileCode2,
+  ExternalLink
 } from 'lucide-react';
 
 interface ApkDownloadModalProps {
@@ -21,7 +22,9 @@ interface ApkDownloadModalProps {
   onClose: () => void;
 }
 
-const LATEST_GITHUB_APK_URL = 'https://github.com/itsxmit1503/Parisar/releases/latest/download/parisar-release.apk';
+const DIRECT_APK_PATH = '/downloads/parisar-v2.0.0-release.apk';
+const GITHUB_RELEASE_URL = 'https://github.com/itsxmit1503/Parisar/releases/tag/v2.0.0';
+const GITHUB_DIRECT_APK_URL = 'https://github.com/itsxmit1503/Parisar/releases/download/v2.0.0/parisar-v2.0.0-release.apk';
 
 export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onClose }) => {
   const { showToast } = useToast();
@@ -29,8 +32,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
 
   React.useEffect(() => {
-    // Generate QR code pointing directly to the latest GitHub Release APK
-    QRCode.toDataURL(LATEST_GITHUB_APK_URL, {
+    QRCode.toDataURL(GITHUB_DIRECT_APK_URL, {
       width: 180,
       margin: 1,
       color: { dark: '#18212B', light: '#FCFAF5' },
@@ -40,29 +42,27 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
   }, []);
 
   const handleDownload = () => {
-    setDownloadProgress(15);
+    setDownloadProgress(20);
     const interval = setInterval(() => {
       setDownloadProgress(prev => {
-        if (prev === null) return 15;
+        if (prev === null) return 20;
         if (prev >= 100) {
           clearInterval(interval);
           setTimeout(() => {
             setDownloadProgress(null);
-            showToast('success', 'PARISAR v2.0.0 Official Android APK download started.', 'APK Download Initiated');
+            showToast('success', 'PARISAR v2.0.0 Official Android APK (4.6 MB) download started.', 'APK Download Initiated');
             const link = document.createElement('a');
-            link.href = LATEST_GITHUB_APK_URL;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
+            link.href = DIRECT_APK_PATH;
             link.download = 'parisar-v2.0.0-release.apk';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-          }, 300);
+          }, 250);
           return 100;
         }
-        return prev + 30;
+        return prev + 40;
       });
-    }, 200);
+    }, 180);
   };
 
   return (
@@ -76,7 +76,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
         <div className="flex items-center justify-between w-full">
           <div className="text-xs text-[#62605B] flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-[#B08A4A]" />
-            <span>Signed with DHSGSU Android Release Keystore (v2.0.0)</span>
+            <span>Signed with DHSGSU Android Release Keystore (v2.0.0 • 4.6 MB)</span>
           </div>
           <Button variant="secondary" size="sm" onClick={onClose}>
             Close
@@ -98,7 +98,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
             </h4>
 
             <p className="text-[#62605B] leading-relaxed text-xs">
-              Install PARISAR v2.0.0 directly on any Android device running Android 8.0+. 
+              Install PARISAR v2.0.0 (4.6 MB) directly on any Android device running Android 8.0+. 
               Includes Role-Based Authentication (Student, Verified Organizer, University Administrator), Digital Event Passes, and QR Attendance Scanner.
             </p>
 
@@ -106,7 +106,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
               {downloadProgress !== null ? (
                 <div className="space-y-1.5 w-full max-w-xs">
                   <div className="flex items-center justify-between text-[11px] text-[#62605B] font-mono font-bold">
-                    <span>Fetching Latest Release APK...</span>
+                    <span>Downloading parisar-v2.0.0-release.apk...</span>
                     <span>{downloadProgress}%</span>
                   </div>
                   <div className="w-full bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] h-2.5 overflow-hidden">
@@ -117,14 +117,25 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
                   </div>
                 </div>
               ) : (
-                <Button
-                  variant="primary"
-                  size="md"
-                  leftIcon={<Download className="w-4 h-4" />}
-                  onClick={handleDownload}
-                >
-                  Download Latest APK (v2.0.0)
-                </Button>
+                <>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    leftIcon={<Download className="w-4 h-4" />}
+                    onClick={handleDownload}
+                  >
+                    Download APK v2.0.0 (4.6 MB)
+                  </Button>
+                  <a
+                    href={GITHUB_RELEASE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[3px] bg-[#EAE5DB] hover:bg-[#DFD9CE] text-[#18212B] border border-[#B9B4AA] font-bold text-xs transition-all"
+                  >
+                    <span>View GitHub Release v2.0.0</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-[#B6533C]" />
+                  </a>
+                </>
               )}
             </div>
           </div>
@@ -151,7 +162,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
             <span>Platform Strategy: Dual Clients, Single Source of Truth</span>
           </div>
           <p className="text-[#62605B] leading-relaxed">
-            The web portal and the Android application are <strong>not separate products</strong>. Both communicate through the same versioned REST API (<code className="font-mono text-[11px] bg-[#EAE5DB] border border-[#B9B4AA] px-1 py-0.5 rounded-[2px] text-[#18212B]">/api/v1</code>) and share the same university data store. Every commit automatically replaces the older GitHub Release APK with the latest signed build.
+            The web portal and the Android application are <strong>not separate products</strong>. Both communicate through the same versioned REST API (<code className="font-mono text-[11px] bg-[#EAE5DB] border border-[#B9B4AA] px-1 py-0.5 rounded-[2px] text-[#18212B]">/api/v1</code>) and share the same university data store.
           </p>
         </div>
 
