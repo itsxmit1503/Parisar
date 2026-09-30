@@ -75,10 +75,5 @@ jobs:
           echo "Publishing fresh v2.0.0 release..."
           gh release create v2.0.0 parisar-v2.0.0-release.apk parisar-release.apk \
             --title "PARISAR Android App v2.0.0 (Official Release — DHSGSU)" \
-            --notes "### PARISAR Official Android Client (v2.0.0) — Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.)
-
-- **Direct APK Download**: Click **\`parisar-v2.0.0-release.apk\`** (4.6 MB) below to install directly on Android 8.0+.
-- **Role-Based Architecture**: Dedicated authentication & panels for **Students**, **Verified Organizers**, and **University Administrators (DSW)**.
-- **Organizer Verification & Event Moderation**: Mandatory DSW approval workflow for new organizer accounts and submitted campus event proposals.
-- **Digital Event Passes & QR Turnstile Scanner**: Cryptographic student event passes and real-time optical attendance verification." \
+            --notes "Official compiled and signed Android release (v2.0.0 — 4.6 MB) for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.). Includes Role-Based Authentication (Student, Verified Organizer, University Administrator), Mandatory Organizer Verification Workflow, Event Moderation, Digital Event Passes, and QR Turnstile Attendance." \
             --latest
