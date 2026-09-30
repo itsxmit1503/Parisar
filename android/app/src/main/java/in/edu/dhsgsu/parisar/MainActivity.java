@@ -45,6 +45,7 @@ public class MainActivity extends AppCompatActivity {
 
         swipeRefresh.setOnRefreshListener(() -> {
             if (isNetworkAvailable()) {
+                webView.clearCache(true);
                 webView.reload();
             } else {
                 swipeRefresh.setRefreshing(false);
@@ -82,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setDisplayZoomControls(false);
         settings.setSupportZoom(false);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setUserAgentString(settings.getUserAgentString() + " PARISAR_Android/1.0.0");
+        settings.setUserAgentString(settings.getUserAgentString() + " PARISAR_Android/2.0.0_DHSGSU");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override

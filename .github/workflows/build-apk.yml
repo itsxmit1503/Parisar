@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'android/**'
-      - '.github/workflows/build-apk.yml'
   workflow_dispatch:
 
 permissions:
@@ -14,7 +11,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Compile Android Release APK
+    name: Compile & Replace Latest Android Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -54,22 +51,29 @@ jobs:
 
       - name: Prepare Release Artifact
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk ./parisar-v1.0.0-release.apk
-          ls -lh parisar-v1.0.0-release.apk
+          cp android/app/build/outputs/apk/release/app-release.apk ./parisar-release.apk
+          cp android/app/build/outputs/apk/release/app-release.apk ./parisar-v2.0.0-release.apk
+          ls -lh parisar-release.apk parisar-v2.0.0-release.apk
 
       - name: Upload APK to GitHub Actions Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: parisar-v1.0.0-release-apk
-          path: parisar-v1.0.0-release.apk
+          name: parisar-v2.0.0-release-apk
+          path: parisar-v2.0.0-release.apk
           if-no-files-found: error
 
-      - name: Upload APK to GitHub Releases (v1.0.0)
+      - name: Remove Old Releases & Publish Only the Latest APK Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Uploading genuine signed APK to GitHub Release v1.0.0..."
-          gh release upload v1.0.0 parisar-v1.0.0-release.apk --clobber || \
-          gh release create v1.0.0 parisar-v1.0.0-release.apk \
-            --title "PARISAR Android App v1.0.0 (Official Release)" \
-            --notes "Official compiled and signed Android companion release for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.)."
+          echo "Removing all previous GitHub releases so only the latest version exists..."
+          for tag in $(gh release list --json tagName -q '.[].tagName'); do
+            echo "Deleting old release and tag: $tag"
+            gh release delete "$tag" --cleanup-tag --yes || true
+          done
+
+          echo "Creating fresh GitHub Release v2.0.0 with latest signed APK..."
+          gh release create v2.0.0 parisar-release.apk parisar-v2.0.0-release.apk \
+            --title "PARISAR Android App v2.0.0 (Latest Official Release — DHSGSU)" \
+            --notes "Official compiled and signed Android release (v2.0.0) for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.). Includes Role-Based Authentication (Student, Verified Organizer, University Administrator), Organizer Verification Workflow, Event Moderation, and QR Turnstile Attendance." \
+            --latest

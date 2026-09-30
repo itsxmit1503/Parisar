@@ -21,14 +21,16 @@ interface ApkDownloadModalProps {
   onClose: () => void;
 }
 
+const LATEST_GITHUB_APK_URL = 'https://github.com/itsxmit1503/Parisar/releases/latest/download/parisar-release.apk';
+
 export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onClose }) => {
   const { showToast } = useToast();
   const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
   const [qrCodeUrl, setQrCodeUrl] = useState<string>('');
 
   React.useEffect(() => {
-    // Generate QR code pointing to simulated APK download endpoint
-    QRCode.toDataURL('https://parisar.dhsgsu.edu.in/downloads/android/parisar-v1.0.0.apk', {
+    // Generate QR code pointing directly to the latest GitHub Release APK
+    QRCode.toDataURL(LATEST_GITHUB_APK_URL, {
       width: 180,
       margin: 1,
       color: { dark: '#18212B', light: '#FCFAF5' },
@@ -38,27 +40,29 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
   }, []);
 
   const handleDownload = () => {
-    setDownloadProgress(10);
+    setDownloadProgress(15);
     const interval = setInterval(() => {
       setDownloadProgress(prev => {
-        if (prev === null) return 10;
+        if (prev === null) return 15;
         if (prev >= 100) {
           clearInterval(interval);
           setTimeout(() => {
             setDownloadProgress(null);
-            showToast('success', 'PARISAR-v1.0.0-release.apk download initiated.', 'APK Download Complete');
+            showToast('success', 'PARISAR v2.0.0 Official Android APK download started.', 'APK Download Initiated');
             const link = document.createElement('a');
-            link.href = '/downloads/parisar-v1.0.0-release.apk';
-            link.download = 'parisar-v1.0.0-release.apk';
+            link.href = LATEST_GITHUB_APK_URL;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.download = 'parisar-v2.0.0-release.apk';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-          }, 400);
+          }, 300);
           return 100;
         }
         return prev + 30;
       });
-    }, 250);
+    }, 200);
   };
 
   return (
@@ -66,13 +70,13 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
       isOpen={isOpen}
       onClose={onClose}
       title="PARISAR for Android • DHSGSU"
-      subtitle="Official mobile client built with React Native & Expo (Two Clients, One Platform)"
+      subtitle="Official mobile client for Dr. Harisingh Gour Vishwavidyalaya (Two Clients, One Platform)"
       maxWidth="xl"
       footer={
         <div className="flex items-center justify-between w-full">
           <div className="text-xs text-[#62605B] flex items-center gap-1.5">
             <ShieldCheck className="w-4 h-4 text-[#B08A4A]" />
-            <span>Signed with DHSGSU Android Release Keystore</span>
+            <span>Signed with DHSGSU Android Release Keystore (v2.0.0)</span>
           </div>
           <Button variant="secondary" size="sm" onClick={onClose}>
             Close
@@ -86,7 +90,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
           <div className="space-y-3 flex-1 text-center sm:text-left">
             <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[2px] bg-[#EAE5DB] text-[#B6533C] border border-[#B9B4AA] text-[11px] font-mono font-bold uppercase tracking-wider">
               <Smartphone className="w-3.5 h-3.5 text-[#B6533C]" />
-              <span>Official Release • Version 1.0.0</span>
+              <span>Latest Official Release • Version 2.0.0</span>
             </div>
 
             <h4 className="text-base font-bold text-[#18212B] leading-snug">
@@ -94,15 +98,15 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
             </h4>
 
             <p className="text-[#62605B] leading-relaxed text-xs">
-              Install PARISAR directly on any Android device running Android 9.0+. 
-              Uses the same centralized DHSGSU backend and authentication as the web portal.
+              Install PARISAR v2.0.0 directly on any Android device running Android 8.0+. 
+              Includes Role-Based Authentication (Student, Verified Organizer, University Administrator), Digital Event Passes, and QR Attendance Scanner.
             </p>
 
-            <div className="pt-1">
+            <div className="pt-1 flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
               {downloadProgress !== null ? (
-                <div className="space-y-1.5 max-w-xs">
+                <div className="space-y-1.5 w-full max-w-xs">
                   <div className="flex items-center justify-between text-[11px] text-[#62605B] font-mono font-bold">
-                    <span>Downloading APK...</span>
+                    <span>Fetching Latest Release APK...</span>
                     <span>{downloadProgress}%</span>
                   </div>
                   <div className="w-full bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] h-2.5 overflow-hidden">
@@ -119,7 +123,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
                   leftIcon={<Download className="w-4 h-4" />}
                   onClick={handleDownload}
                 >
-                  Download APK (42.8 MB)
+                  Download Latest APK (v2.0.0)
                 </Button>
               )}
             </div>
@@ -128,7 +132,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
           {/* QR code to scan from phone */}
           <div className="flex flex-col items-center justify-center p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)] shrink-0">
             {qrCodeUrl ? (
-              <img src={qrCodeUrl} alt="Scan to download APK" className="w-32 h-32 border border-[#B9B4AA] rounded-[2px]" />
+              <img src={qrCodeUrl} alt="Scan to download latest APK" className="w-32 h-32 border border-[#B9B4AA] rounded-[2px]" />
             ) : (
               <div className="w-32 h-32 bg-[#FCFAF5] flex items-center justify-center text-[#62605B]">
                 Loading QR...
@@ -140,14 +144,14 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
           </div>
         </div>
 
-        {/* Platform Strategy Explanation (Section 7 & 10) */}
+        {/* Platform Strategy Explanation */}
         <div className="p-4 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] space-y-2 shadow-[2px_2px_0_0_#18212B]">
           <div className="font-bold text-[#18212B] flex items-center gap-1.5">
             <Layers className="w-4 h-4 text-[#B6533C]" />
             <span>Platform Strategy: Dual Clients, Single Source of Truth</span>
           </div>
           <p className="text-[#62605B] leading-relaxed">
-            The web portal and the Android application are <strong>not separate products</strong>. Both communicate through the same versioned REST API (<code className="font-mono text-[11px] bg-[#EAE5DB] border border-[#B9B4AA] px-1 py-0.5 rounded-[2px] text-[#18212B]">/api/v1</code>) and share the exact same MongoDB database. Actions taken on the mobile app update the web interface in real time and vice versa.
+            The web portal and the Android application are <strong>not separate products</strong>. Both communicate through the same versioned REST API (<code className="font-mono text-[11px] bg-[#EAE5DB] border border-[#B9B4AA] px-1 py-0.5 rounded-[2px] text-[#18212B]">/api/v1</code>) and share the same university data store. Every commit automatically replaces the older GitHub Release APK with the latest signed build.
           </p>
         </div>
 
@@ -169,7 +173,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
               <WifiOff className="w-4 h-4 text-[#64788A] shrink-0 mt-0.5" />
               <div>
                 <div className="font-bold text-[#18212B]">Offline Pass Storage</div>
-                <div className="text-[#62605B] text-[11px] mt-0.5">Digital event passes remain available even during basement cellular blackouts.</div>
+                <div className="text-[#62605B] text-[11px] mt-0.5">Digital event passes remain available even during auditorium cellular blackouts.</div>
               </div>
             </div>
 
@@ -177,7 +181,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
               <Bell className="w-4 h-4 text-[#B08A4A] shrink-0 mt-0.5" />
               <div>
                 <div className="font-bold text-[#18212B]">Urgent Push Notifications</div>
-                <div className="text-[#62605B] text-[11px] mt-0.5">Immediate push alerts when venues change or sessions are delayed.</div>
+                <div className="text-[#62605B] text-[11px] mt-0.5">Immediate alerts when venues change or sessions are delayed.</div>
               </div>
             </div>
 
@@ -185,7 +189,7 @@ export const ApkDownloadModal: React.FC<ApkDownloadModalProps> = ({ isOpen, onCl
               <FileCode2 className="w-4 h-4 text-[#18212B] shrink-0 mt-0.5" />
               <div>
                 <div className="font-bold text-[#18212B]">Native Android Gestures</div>
-                <div className="text-[#62605B] text-[11px] mt-0.5">Bottom navigation, edge-to-edge rendering, and hardware back-button handling.</div>
+                <div className="text-[#62605B] text-[11px] mt-0.5">Pull-to-refresh, edge-to-edge rendering, and hardware back-button handling.</div>
               </div>
             </div>
           </div>
