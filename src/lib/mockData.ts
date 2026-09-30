@@ -12,6 +12,22 @@ import {
 
 export const INITIAL_USERS: User[] = [
   {
+    _id: 'student-amit-y25170504',
+    name: 'Amit Sharma',
+    email: 'y25170504@dhsgsu.edu.in',
+    passwordHash: 'Programmer@01',
+    rollNumber: 'Y25170504',
+    department: 'Department of Computer Science & Applications (DCSA)',
+    semester: 2,
+    role: 'student',
+    organizerStatus: 'NONE',
+    interests: ['Technology', 'Coding', 'Entrepreneurship', 'Workshop'],
+    profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+    phone: '+91 98260 12345',
+    createdAt: '2026-09-30T10:00:00Z',
+    updatedAt: '2026-09-30T10:00:00Z',
+  },
+  {
     _id: 'student-1',
     name: 'Amit Sharma',
     email: 'amit.sharma@dhsgsu.edu.in',

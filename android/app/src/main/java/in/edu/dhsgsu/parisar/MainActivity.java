@@ -77,8 +77,9 @@ public class MainActivity extends AppCompatActivity {
         settings.setDisplayZoomControls(false);
         settings.setSupportZoom(false);
         settings.setTextZoom(100);
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
         settings.setUserAgentString(settings.getUserAgentString() + " PARISAR_Android/2.1.0_Native");
+        webView.clearCache(true);
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override

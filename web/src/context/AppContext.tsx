@@ -154,7 +154,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const storedUsers = localStorage.getItem(`${STORAGE_PREFIX}users`);
       if (storedUsers) {
-        localUsersSnapshot = JSON.parse(storedUsers);
+        localUsersSnapshot = mergeUsersList(INITIAL_USERS, JSON.parse(storedUsers));
         setAllUsers(localUsersSnapshot);
       }
 
