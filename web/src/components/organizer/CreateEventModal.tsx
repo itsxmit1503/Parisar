@@ -94,7 +94,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           registrationDeadline: deadlineIso,
           tags: parsedTags,
           coverImage,
-          status: asDraft ? 'DRAFT' : 'PUBLISHED',
+          status: asDraft ? 'DRAFT' : 'PENDING_REVIEW',
           eligibility,
           specialInstructions,
         },
@@ -106,8 +106,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           'success',
           asDraft
             ? `Draft saved for "${res.data.title}".`
-            : `Event "${res.data.title}" published to student portal.`,
-          asDraft ? 'Draft Saved' : 'Event Published'
+            : `Event "${res.data.title}" submitted to University Administrator for review & approval.`,
+          asDraft ? 'Draft Saved' : 'Submitted for Review'
         );
         onSuccess(res.data);
         onClose();
@@ -125,8 +125,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Create University Event"
-      subtitle="Establish new academic workshops, competitions, or society gatherings"
+      title="Create University Event Proposal"
+      subtitle="Draft an event or submit directly to the University Administrator for official campus publication"
       maxWidth="2xl"
       footer={
         <div className="flex items-center justify-between w-full">
@@ -152,7 +152,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               isLoading={isSubmitting}
               onClick={() => handleSubmit(false)}
             >
-              Publish Event
+              Submit for Admin Review
             </Button>
           </div>
         </div>

@@ -35,7 +35,13 @@ export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDet
   const handleStatusChange = (eventId: string, title: string, newStatus: EventStatus) => {
     const res = adminModerateEvent(eventId, newStatus);
     if (res.success) {
-      showToast('success', `Status of "${title}" changed to ${newStatus}.`, 'Event Moderated');
+      if (newStatus === 'PUBLISHED') {
+        showToast('success', `"${title}" has been approved and published to the student portal.`, 'Event Approved');
+      } else if (newStatus === 'REJECTED') {
+        showToast('error', `"${title}" proposal has been rejected.`, 'Event Rejected');
+      } else {
+        showToast('info', `Status of "${title}" changed to ${newStatus}.`, 'Event Updated');
+      }
     }
   };
 
@@ -47,10 +53,10 @@ export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDet
           Academic Affairs Oversight
         </div>
         <h1 className="text-2xl font-bold text-[#18212B] tracking-tight">
-          Campus Event Moderation
+          Campus Event Authorization & Management
         </h1>
         <p className="text-xs text-[#62605B] mt-0.5">
-          Review event proposals, verify facility reservations, and ensure adherence to university code of conduct.
+          Review submitted event proposals, authorize official university events, and manage status across DHSGSU.
         </p>
       </div>
 
@@ -67,26 +73,26 @@ export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDet
           />
         </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          {(['ALL', 'DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED'] as const).map(st => (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+          {(['ALL', 'PENDING_REVIEW', 'PUBLISHED', 'DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'] as const).map(st => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1 rounded-[2px] text-[11px] font-mono uppercase tracking-wider font-bold transition-all ${
+              className={`px-3 py-1 rounded-[2px] text-[11px] font-mono uppercase tracking-wider font-bold transition-all whitespace-nowrap cursor-pointer ${
                 statusFilter === st
                   ? 'bg-[#18212B] text-[#FCFAF5] shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] border border-[#18212B]'
                   : 'bg-[#FCFAF5] text-[#18212B] hover:bg-[#EAE5DB] border border-[#B9B4AA] shadow-[1px_1px_0_0_#18212B]'
               }`}
             >
-              {st}
+              {st === 'PUBLISHED' ? 'APPROVED' : st === 'PENDING_REVIEW' ? 'PENDING REVIEW' : st}
             </button>
           ))}
         </div>
       </div>
 
       {/* Moderation Table */}
-      <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] overflow-hidden shadow-[2px_2px_0_0_#18212B]">
-        <table className="w-full text-left text-xs">
+      <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] overflow-hidden shadow-[2px_2px_0_0_#18212B] overflow-x-auto">
+        <table className="w-full text-left text-xs min-w-[700px]">
           <thead className="bg-[#EAE5DB] border-b border-[#B9B4AA] text-[#18212B] font-mono text-[11px] uppercase tracking-wider">
             <tr>
               <th className="py-3 px-4 font-bold">Event Details</th>
@@ -130,34 +136,45 @@ export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDet
 
                 <td className="py-3 px-4 text-right">
                   <div className="flex items-center justify-end gap-1.5">
-                    {evt.status === 'DRAFT' && (
+                    {(evt.status === 'PENDING_REVIEW' || evt.status === 'DRAFT' || evt.status === 'REJECTED') && (
                       <Button
                         variant="primary"
                         size="sm"
                         onClick={() => handleStatusChange(evt._id, evt.title, 'PUBLISHED')}
                       >
-                        Approve & Publish
+                        Approve
                       </Button>
                     )}
 
-                    {evt.status === 'PUBLISHED' && (
+                    {(evt.status === 'PENDING_REVIEW' || evt.status === 'DRAFT') && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-[#A83226] border-[#A83226]"
+                        onClick={() => handleStatusChange(evt._id, evt.title, 'REJECTED')}
+                      >
+                        Reject
+                      </Button>
+                    )}
+
+                    {(evt.status === 'PUBLISHED' || evt.status === 'APPROVED') && (
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleStatusChange(evt._id, evt.title, 'COMPLETED')}
                       >
-                        Mark Completed
+                        Complete
                       </Button>
                     )}
 
-                    {evt.status !== 'CANCELLED' && (
+                    {evt.status !== 'CANCELLED' && evt.status !== 'REJECTED' && (
                       <Button
                         variant="ghost"
                         size="sm"
                         className="text-[#A83226] hover:bg-[#FBEAEA]"
                         onClick={() => handleStatusChange(evt._id, evt.title, 'CANCELLED')}
                       >
-                        Cancel Event
+                        Cancel
                       </Button>
                     )}
                   </div>

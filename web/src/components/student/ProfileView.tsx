@@ -4,46 +4,52 @@ import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CampusEvent, Registration } from '../../types';
 import { 
-  User, 
   Calendar, 
   Award, 
   Bell, 
-  ShieldCheck, 
-  Ticket, 
   Compass, 
   Settings, 
   CheckCircle2, 
-  Clock, 
   MapPin, 
-  BookOpen, 
   QrCode,
-  Sliders,
-  ChevronRight
+  Edit3,
+  Save,
+  LogOut
 } from 'lucide-react';
 import { EventPassport } from './EventPassport';
 import { CertificatesView } from './CertificatesView';
 import { NotificationsView } from './NotificationsView';
 import { Button } from '../ui/Button';
-import { Badge, CategoryBadge, EventStatusBadge } from '../ui/Badge';
-import { ParisarLogo } from '../ui/ParisarLogo';
+import { CategoryBadge } from '../ui/Badge';
+import { useToast } from '../ui/Toast';
 
 interface ProfileViewProps {
   initialSubTab?: 'my-events' | 'passport' | 'certificates' | 'notifications' | 'settings';
   onOpenPass: (reg: Registration, event: CampusEvent) => void;
   onExploreEvents: () => void;
+  onLogout?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   initialSubTab = 'my-events',
   onOpenPass,
   onExploreEvents,
+  onLogout,
 }) => {
-  const { currentUser, registrations, events, certificates, attendance } = useApp();
+  const { currentUser, registrations, events, certificates, attendance, updateUserProfile, logout } = useApp();
+  const { showToast } = useToast();
   const [activeSubTab, setActiveSubTab] = useState<'my-events' | 'passport' | 'certificates' | 'notifications' | 'settings'>(initialSubTab);
 
   const studentRegs = registrations.filter(r => r.userId === currentUser._id && r.status === 'CONFIRMED');
   const userCerts = certificates.filter(c => c.userId === currentUser._id);
   const userAttendance = attendance.filter(a => a.userId === currentUser._id);
+
+  // Edit Profile State
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [name, setName] = useState(currentUser.name);
+  const [department, setDepartment] = useState(currentUser.department);
+  const [semester, setSemester] = useState<number>(currentUser.semester || 6);
+  const [phone, setPhone] = useState(currentUser.phone || '');
 
   // Settings State for Profile Form
   const [notificationEmail, setNotificationEmail] = useState(true);
@@ -51,9 +57,28 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [notificationDelays, setNotificationDelays] = useState(true);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    updateUserProfile({
+      name: name.trim(),
+      department: department.trim(),
+      semester,
+      phone: phone.trim(),
+    });
+    setIsEditingProfile(false);
+    showToast('success', 'Your DHSGSU student profile details have been saved.');
+  };
+
   const handleSaveSettings = () => {
     setSavedMessage('Preferences updated successfully.');
+    showToast('success', 'Your campus notification preferences have been updated.');
     setTimeout(() => setSavedMessage(null), 3000);
+  };
+
+  const handleLogoutClick = () => {
+    logout();
+    if (onLogout) onLogout();
   };
 
   return (
@@ -86,7 +111,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </h1>
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#62605B]">
                 <span className="font-mono text-[#18212B] font-bold">
-                  Roll: {currentUser.rollNumber || 'N/A'}
+                  University ID / Roll: {currentUser.rollNumber || 'N/A'}
                 </span>
                 <span>•</span>
                 <span>{currentUser.department}</span>
@@ -98,16 +123,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 )}
               </div>
 
-              {/* Interests Tags */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
-                {currentUser.interests.map(interest => (
-                  <span
-                    key={interest}
-                    className="px-2 py-0.5 rounded-[2px] text-[10px] font-bold bg-[#EAE5DB] text-[#18212B] border border-[#B9B4AA]"
-                  >
-                    #{interest}
-                  </span>
-                ))}
+              {/* Action Buttons: Edit Profile & Logout */}
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Edit3 className="w-3.5 h-3.5" />}
+                  onClick={() => {
+                    setActiveSubTab('settings');
+                    setIsEditingProfile(true);
+                  }}
+                >
+                  Edit Profile
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  leftIcon={<LogOut className="w-3.5 h-3.5" />}
+                  onClick={handleLogoutClick}
+                >
+                  Logout
+                </Button>
               </div>
             </div>
           </div>
@@ -116,7 +152,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="grid grid-cols-3 gap-3 w-full md:w-auto text-center border-t md:border-t-0 md:border-l border-[#B9B4AA] pt-4 md:pt-0 md:pl-6">
             <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
               <div className="text-xl sm:text-2xl font-mono font-extrabold text-[#18212B]">
-                {userAttendance.length + 3}
+                {userAttendance.length}
               </div>
               <div className="text-[9px] font-bold uppercase tracking-wider text-[#62605B] mt-0.5">
                 Attended
@@ -167,7 +203,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           }`}
         >
           <Compass className="w-3.5 h-3.5" />
-          <span>Event Passport</span>
+          <span>Participation History</span>
         </button>
 
         <button
@@ -203,7 +239,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           }`}
         >
           <Settings className="w-3.5 h-3.5" />
-          <span>Settings</span>
+          <span>Profile & Preferences</span>
         </button>
       </div>
 
@@ -213,7 +249,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold text-[#18212B]">Registered Campus Events</h2>
-              <p className="text-xs text-[#62605B]">Your confirmed event passes and upcoming schedules across DHSGSU.</p>
+              <p className="text-xs text-[#62605B]">Your confirmed event passes, attendance status, and upcoming schedules across DHSGSU.</p>
             </div>
             <Button variant="outline" size="sm" onClick={onExploreEvents}>
               Explore More Events
@@ -239,11 +275,11 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         {isCheckedIn ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-[#2F613B] bg-[#EBF3ED] px-2 py-0.5 rounded-[2px] border border-[#2F613B]/30">
                             <CheckCircle2 className="w-3 h-3 text-[#2F613B]" />
-                            Checked In
+                            Attendance Verified
                           </span>
                         ) : (
                           <span className="text-[10px] font-mono font-bold uppercase text-[#B6533C] bg-[#FBEFEF] px-2 py-0.5 rounded-[2px] border border-[#B6533C]/30">
-                            Pass Ready
+                            Registered • Pass Ready
                           </span>
                         )}
                       </div>
@@ -266,7 +302,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
                     <div className="pt-3 border-t border-[#B9B4AA] flex items-center justify-between">
                       <div className="text-[10px] font-mono text-[#62605B]">
-                        Token: <strong className="text-[#18212B]">{reg.qrToken}</strong>
+                        Pass ID: <strong className="text-[#18212B]">{reg.qrToken}</strong>
                       </div>
                       <Button
                         variant="primary"
@@ -274,7 +310,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                         leftIcon={<QrCode className="w-3.5 h-3.5" />}
                         onClick={() => onOpenPass(reg, event)}
                       >
-                        View Digital Pass
+                        View Event Pass
                       </Button>
                     </div>
                   </div>
@@ -286,17 +322,17 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <Calendar className="w-8 h-8 text-[#62605B] mx-auto opacity-50" />
               <h3 className="font-bold text-sm text-[#18212B]">No active registrations yet</h3>
               <p className="text-xs text-[#62605B] max-w-sm mx-auto">
-                Discover workshops, cultural evenings, and competitions happening this week across DHSGSU.
+                Discover seminars, workshops, cultural events, and competitions happening across DHSGSU.
               </p>
               <Button variant="primary" size="sm" onClick={onExploreEvents}>
-                Discover Events
+                Explore Campus Events
               </Button>
             </div>
           )}
         </div>
       )}
 
-      {/* Tab 2: Event Passport */}
+      {/* Tab 2: Event Passport / Participation History */}
       {activeSubTab === 'passport' && (
         <EventPassport
           onViewCertificates={() => setActiveSubTab('certificates')}
@@ -317,13 +353,25 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         />
       )}
 
-      {/* Tab 5: Settings */}
+      {/* Tab 5: Profile & Settings */}
       {activeSubTab === 'settings' && (
         <div className="max-w-3xl space-y-6">
           <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-6 shadow-[2px_2px_0_0_#18212B] space-y-6">
-            <div>
-              <h2 className="text-base font-bold text-[#18212B]">PARISAR Account & Preferences</h2>
-              <p className="text-xs text-[#62605B] mt-0.5">Manage your DHSGSU student profile, communication channels, and alerts.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-[#18212B]">Student Profile & Preferences</h2>
+                <p className="text-xs text-[#62605B] mt-0.5">Manage your DHSGSU student details, communication channels, and alerts.</p>
+              </div>
+              {!isEditingProfile && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Edit3 className="w-3.5 h-3.5" />}
+                  onClick={() => setIsEditingProfile(true)}
+                >
+                  Edit Profile
+                </Button>
+              )}
             </div>
 
             {savedMessage && (
@@ -333,30 +381,109 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             )}
 
-            {/* Profile Information (Read-only verified from University Registrar) */}
-            <div className="space-y-3 pt-3 border-t border-[#B9B4AA]">
-              <div className="text-xs font-bold uppercase tracking-wider text-[#18212B]">
-                Academic Enrollment Record (Registrar Verified)
+            {/* Profile Information (View or Edit) */}
+            {isEditingProfile ? (
+              <form onSubmit={handleSaveProfile} className="space-y-4 pt-3 border-t border-[#B9B4AA]">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#B6533C]">
+                  Edit Student Profile
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#18212B]">Full Name</label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] font-bold text-[#18212B] focus:outline-none focus:border-[#18212B]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#18212B]">University ID / Roll Number</label>
+                    <input
+                      type="text"
+                      value={currentUser.rollNumber || ''}
+                      disabled
+                      className="w-full px-3 py-2 bg-[#EAE5DB]/50 border border-[#B9B4AA] rounded-[2px] font-mono text-[#62605B] cursor-not-allowed"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#18212B]">Department</label>
+                    <input
+                      type="text"
+                      value={department}
+                      onChange={e => setDepartment(e.target.value)}
+                      required
+                      className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-[#18212B] focus:outline-none focus:border-[#18212B]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#18212B]">Semester</label>
+                    <select
+                      value={semester}
+                      onChange={e => setSemester(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-[#18212B] focus:outline-none focus:border-[#18212B]"
+                    >
+                      {[1, 2, 3, 4, 5, 6, 7, 8].map(s => (
+                        <option key={s} value={s}>Semester {s}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="font-bold text-[#18212B]">Contact Phone</label>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={e => setPhone(e.target.value)}
+                      placeholder="+91 98260 12345"
+                      className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] font-mono text-[#18212B] focus:outline-none focus:border-[#18212B]"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsEditingProfile(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<Save className="w-3.5 h-3.5" />}
+                  >
+                    Save Profile Changes
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-3 pt-3 border-t border-[#B9B4AA]">
+                <div className="text-xs font-bold uppercase tracking-wider text-[#18212B]">
+                  Academic Enrollment Record
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px]">
+                    <div className="text-[10px] text-[#62605B] uppercase font-bold">Full Student Name</div>
+                    <div className="font-bold text-[#18212B] mt-0.5">{currentUser.name}</div>
+                  </div>
+                  <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px]">
+                    <div className="text-[10px] text-[#62605B] uppercase font-bold">University ID / Roll Number</div>
+                    <div className="font-mono font-bold text-[#18212B] mt-0.5">{currentUser.rollNumber}</div>
+                  </div>
+                  <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px]">
+                    <div className="text-[10px] text-[#62605B] uppercase font-bold">Academic Department</div>
+                    <div className="font-semibold text-[#18212B] mt-0.5">{currentUser.department}</div>
+                  </div>
+                  <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px]">
+                    <div className="text-[10px] text-[#62605B] uppercase font-bold">University Email Address</div>
+                    <div className="font-mono text-[#18212B] mt-0.5">{currentUser.email}</div>
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px]">
-                  <div className="text-[10px] text-[#62605B] uppercase font-bold">Full Student Name</div>
-                  <div className="font-bold text-[#18212B] mt-0.5">{currentUser.name}</div>
-                </div>
-                <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px]">
-                  <div className="text-[10px] text-[#62605B] uppercase font-bold">University Enrollment Number</div>
-                  <div className="font-mono font-bold text-[#18212B] mt-0.5">{currentUser.rollNumber}</div>
-                </div>
-                <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px]">
-                  <div className="text-[10px] text-[#62605B] uppercase font-bold">Academic Department</div>
-                  <div className="font-semibold text-[#18212B] mt-0.5">{currentUser.department}</div>
-                </div>
-                <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px]">
-                  <div className="text-[10px] text-[#62605B] uppercase font-bold">University Email Address</div>
-                  <div className="font-mono text-[#18212B] mt-0.5">{currentUser.email}</div>
-                </div>
-              </div>
-            </div>
+            )}
 
             {/* Notification Channels */}
             <div className="space-y-3 pt-3 border-t border-[#B9B4AA]">
@@ -405,7 +532,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </div>
             </div>
 
-            <div className="pt-4 border-t border-[#B9B4AA] flex items-center justify-end">
+            <div className="pt-4 border-t border-[#B9B4AA] flex items-center justify-between">
+              <Button
+                variant="destructive"
+                size="sm"
+                leftIcon={<LogOut className="w-3.5 h-3.5" />}
+                onClick={handleLogoutClick}
+              >
+                Logout of PARISAR
+              </Button>
               <Button variant="primary" size="sm" onClick={handleSaveSettings}>
                 Save Preferences
               </Button>

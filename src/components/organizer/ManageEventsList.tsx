@@ -51,10 +51,10 @@ export const ManageEventsList: React.FC<ManageEventsListProps> = ({
     return true;
   });
 
-  const handlePublishDraft = (eventId: string, title: string) => {
-    const res = updateEvent(eventId, { status: 'PUBLISHED' });
+  const handleSubmitForReview = (eventId: string, title: string) => {
+    const res = updateEvent(eventId, { status: 'PENDING_REVIEW' });
     if (res.success) {
-      showToast('success', `"${title}" has been published and is now open for registrations.`, 'Event Published');
+      showToast('info', `"${title}" has been submitted to the University Administrator for review.`, 'Submitted for Review');
     }
   };
 
@@ -73,13 +73,13 @@ export const ManageEventsList: React.FC<ManageEventsListProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#B9B4AA] pb-4">
         <div>
           <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#B6533C] mb-1">
-            Faculty Event Lifecycle
+            Organizer Event Lifecycle
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
-            Manage Campus Events
+            My Events
           </h1>
           <p className="text-xs text-[#62605B] mt-0.5">
-            Monitor registration velocity, coordinate entrance scanning, and issue verified credentials.
+            Manage event proposals, submit drafts for administrative authorization, and coordinate entrance scanning.
           </p>
         </div>
 
@@ -96,17 +96,17 @@ export const ManageEventsList: React.FC<ManageEventsListProps> = ({
       {/* Filter Tabs & Search - Tactile Controls */}
       <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-3 shadow-[2px_2px_0_0_#18212B] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
-          {(['ALL', 'PUBLISHED', 'DRAFT', 'ONGOING', 'COMPLETED', 'CANCELLED'] as const).map(st => (
+          {(['ALL', 'PUBLISHED', 'PENDING_REVIEW', 'DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'] as const).map(st => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
-              className={`px-3 py-1 rounded-[2px] text-xs font-bold transition-all whitespace-nowrap ${
+              className={`px-3 py-1 rounded-[2px] text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 statusFilter === st
                   ? 'bg-[#18212B] text-[#FCFAF5] border border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)]'
                   : 'bg-[#FCFAF5] text-[#18212B] border border-[#B9B4AA] shadow-[1px_1px_0_0_#18212B] hover:bg-[#EAE5DB] active:translate-x-[1px] active:translate-y-[1px]'
               }`}
             >
-              {st}
+              {st === 'PUBLISHED' ? 'APPROVED' : st === 'PENDING_REVIEW' ? 'PENDING REVIEW' : st}
             </button>
           ))}
         </div>
@@ -184,24 +184,30 @@ export const ManageEventsList: React.FC<ManageEventsListProps> = ({
 
                 {/* Operations Action Buttons */}
                 <div className="flex flex-wrap items-center gap-2 shrink-0 border-t lg:border-t-0 lg:border-l border-[#B9B4AA] pt-3 lg:pt-0 lg:pl-5">
-                  {evt.status === 'DRAFT' && (
+                  {(evt.status === 'DRAFT' || evt.status === 'REJECTED') && (
                     <Button
                       variant="primary"
                       size="sm"
-                      onClick={() => handlePublishDraft(evt._id, evt.title)}
+                      onClick={() => handleSubmitForReview(evt._id, evt.title)}
                     >
-                      Publish Event
+                      Submit for Review
                     </Button>
                   )}
 
-                  {evt.status === 'PUBLISHED' && (
+                  {evt.status === 'PENDING_REVIEW' && (
+                    <span className="px-3 py-1.5 rounded-[2px] bg-[#FBF4E8] border border-[#E5D2AF] text-[11px] font-mono font-bold text-[#8F5E15]">
+                      Awaiting DSW Approval
+                    </span>
+                  )}
+
+                  {(evt.status === 'PUBLISHED' || evt.status === 'APPROVED') && (
                     <Button
                       variant="primary"
                       size="sm"
                       leftIcon={<QrCode className="w-3.5 h-3.5" />}
                       onClick={() => onScanAttendance(evt._id)}
                     >
-                      Scan Entrance
+                      Scan Attendance
                     </Button>
                   )}
 
@@ -211,10 +217,10 @@ export const ManageEventsList: React.FC<ManageEventsListProps> = ({
                     leftIcon={<Users className="w-3.5 h-3.5 text-[#18212B]" />}
                     onClick={() => onViewParticipants(evt._id)}
                   >
-                    Roster ({evt.registrationCount})
+                    Participants ({evt.registrationCount})
                   </Button>
 
-                  {evt.status !== 'DRAFT' && (
+                  {(evt.status === 'PUBLISHED' || evt.status === 'APPROVED') && (
                     <Button
                       variant="outline"
                       size="sm"

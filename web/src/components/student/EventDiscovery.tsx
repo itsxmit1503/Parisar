@@ -84,6 +84,11 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
 
   const filteredEvents = useMemo(() => {
     return events.filter(evt => {
+      // Students should only see approved/published public events (Section 15)
+      if (evt.status === 'DRAFT' || evt.status === 'PENDING_REVIEW' || evt.status === 'REJECTED' || evt.status === 'CANCELLED') {
+        return false;
+      }
+
       // Category Filter (supports singular & legacy plural mapping)
       if (selectedCategory !== 'All') {
         if (evt.category !== selectedCategory && 

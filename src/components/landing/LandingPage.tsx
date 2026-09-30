@@ -25,7 +25,8 @@ import { CampusEvent } from '../../types';
 interface LandingPageProps {
   onEnterApp: () => void;
   onExploreEvents: () => void;
-  onSelectRole: (role: 'student' | 'organizer' | 'admin', userId?: string) => void;
+  onLogin: () => void;
+  onSignup: () => void;
   onOpenEvent: (event: CampusEvent) => void;
   onOpenApkModal: () => void;
 }
@@ -33,22 +34,23 @@ interface LandingPageProps {
 export const LandingPage: React.FC<LandingPageProps> = ({
   onEnterApp,
   onExploreEvents,
-  onSelectRole,
+  onLogin,
+  onSignup,
   onOpenEvent,
   onOpenApkModal
 }) => {
-  const { events } = useApp();
+  const { events, isAuthenticated, currentUser } = useApp();
 
   // Filter 4 featured events representing the 4 core pillars
   const featuredEvents = events
-    .filter(e => e.status === 'PUBLISHED')
+    .filter(e => e.status === 'PUBLISHED' || e.status === 'APPROVED')
     .slice(0, 4);
 
   return (
     <div className="space-y-16 sm:space-y-24 pb-16">
       {/* HERO SECTION */}
       <section className="relative pt-6 sm:pt-12">
-        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-6 sm:p-12 shadow-[4px_4px_0_0_#18212B] relative overflow-hidden">
+        <div className="bg-[#FCFAF5] border-2 border-[#18212B] rounded-[4px] p-6 sm:p-12 shadow-[4px_4px_0_0_#18212B] relative overflow-hidden">
           {/* Subtle Institutional Watermark */}
           <div className="absolute top-4 right-6 opacity-5 pointer-events-none select-none hidden lg:block text-right">
             <span className="font-serif text-8xl font-black text-[#18212B]">DHSGSU</span>
@@ -74,12 +76,12 @@ export const LandingPage: React.FC<LandingPageProps> = ({
 
             {/* Value Proposition */}
             <p className="text-[#62605B] text-base sm:text-lg leading-relaxed max-w-2xl font-sans">
-              The dedicated digital campus platform built exclusively for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar. 
-              Discover, register, and participate in verified university seminars, practical workshops, cultural celebrations, and academic competitions.
+              Discover, register and participate in events happening across DHSGSU. 
+              The dedicated digital campus platform built exclusively for Dr. Harisingh Gour Vishwavidyalaya, Sagar, Madhya Pradesh.
             </p>
 
             {/* Primary Action Buttons */}
-            <div className="pt-2 flex flex-wrap items-center gap-4">
+            <div className="pt-2 flex flex-wrap items-center gap-3.5">
               <Button
                 variant="primary"
                 size="lg"
@@ -87,10 +89,20 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 onClick={onEnterApp}
                 className="text-base px-8 py-3.5"
               >
-                Enter PARISAR
+                {isAuthenticated ? `Enter ${currentUser.role.toUpperCase()} Panel` : 'Enter PARISAR'}
               </Button>
+              {!isAuthenticated && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={onSignup}
+                  className="text-base px-6 py-3.5"
+                >
+                  Create Account
+                </Button>
+              )}
               <Button
-                variant="secondary"
+                variant="outline"
                 size="lg"
                 leftIcon={<Compass className="w-4 h-4" />}
                 onClick={onExploreEvents}
@@ -99,32 +111,32 @@ export const LandingPage: React.FC<LandingPageProps> = ({
                 Explore Events
               </Button>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="lg"
                 leftIcon={<Download className="w-4 h-4 text-[#B6533C]" />}
                 onClick={onOpenApkModal}
-                className="text-base px-6 py-3.5"
+                className="text-sm px-4 py-3.5 border border-[#B9B4AA]"
               >
-                Android App (v1.0.0 APK)
+                Android App (APK)
               </Button>
             </div>
 
             {/* Verified Campus Stats Bar */}
             <div className="pt-6 border-t border-[#B9B4AA]/40 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
               <div className="space-y-0.5">
-                <span className="text-[#62605B]">CAMPUS REACH</span>
+                <span className="text-[#62605B]">CAMPUS LOCATION</span>
                 <div className="text-sm font-bold text-[#18212B]">Patharia Hills, Sagar</div>
               </div>
               <div className="space-y-0.5">
-                <span className="text-[#62605B]">GOVERNANCE</span>
-                <div className="text-sm font-bold text-[#18212B]">DSW Authorized</div>
+                <span className="text-[#62605B]">AUTHORITY</span>
+                <div className="text-sm font-bold text-[#18212B]">DSW Verified</div>
               </div>
               <div className="space-y-0.5">
-                <span className="text-[#62605B]">ACCESS ROLES</span>
-                <div className="text-sm font-bold text-[#18212B]">3 Distinct Panels</div>
+                <span className="text-[#62605B]">ARCHITECTURE</span>
+                <div className="text-sm font-bold text-[#18212B]">Role-Separated Panels</div>
               </div>
               <div className="space-y-0.5">
-                <span className="text-[#62605B]">TICKETING</span>
+                <span className="text-[#62605B]">CHECK-IN</span>
                 <div className="text-sm font-bold text-[#18212B]">Optical QR Pass</div>
               </div>
             </div>
@@ -132,100 +144,88 @@ export const LandingPage: React.FC<LandingPageProps> = ({
         </div>
       </section>
 
-      {/* QUICK ROLE SELECTOR FOR EVALUATION & DEMO */}
+      {/* CAMPUS ACCESS & ROLES OVERVIEW (Non-clickable informational overview + Auth CTA) */}
       <section className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2 border-b border-[#B9B4AA] pb-3">
           <div>
-            <span className="text-xs font-mono font-bold text-[#B6533C] uppercase tracking-wider">Interactive Persona Switcher</span>
-            <h2 className="text-2xl font-bold text-[#18212B]">Experience PARISAR by University Role</h2>
+            <span className="text-xs font-mono font-bold text-[#B6533C] uppercase tracking-wider">Role-Based Campus Governance</span>
+            <h2 className="text-2xl font-bold text-[#18212B]">Dedicated Interfaces for the DHSGSU Community</h2>
           </div>
-          <p className="text-xs text-[#62605B] max-w-md">
-            Click any authentic university role below to immediately enter their dedicated interface and test workflows.
-          </p>
+          {!isAuthenticated && (
+            <button
+              onClick={onLogin}
+              className="text-xs font-mono font-bold text-[#B6533C] hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>Sign In to Your Account</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {/* Persona 1: Student */}
-          <div 
-            onClick={() => onSelectRole('student', 'student-1')}
-            className="group cursor-pointer bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] hover:shadow-[4px_4px_0_0_#18212B] hover:-translate-y-0.5 transition-all"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="px-2 py-0.5 bg-[#EAE5DB] border border-[#B9B4AA] text-[11px] font-mono font-bold text-[#18212B] uppercase">
-                Role 1: Student
-              </span>
-              <span className="text-xs font-mono text-[#2F613B] font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5" /> Active Participant
-              </span>
+          <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="px-2 py-0.5 bg-[#EAE5DB] border border-[#B9B4AA] text-[11px] font-mono font-bold text-[#18212B] uppercase">
+                  1. Student
+                </span>
+                <span className="text-xs font-mono text-[#2F613B] font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Campus Participant
+                </span>
+              </div>
+              <h3 className="font-bold text-lg text-[#18212B]">
+                Discover & Participate
+              </h3>
+              <p className="text-xs text-[#62605B] mt-2 leading-relaxed">
+                Browse approved seminars, workshops, cultural events, and competitions. Register with your roll number and carry your digital QR event pass.
+              </p>
             </div>
-            <h3 className="font-bold text-lg text-[#18212B] group-hover:text-[#B6533C] transition-colors">
-              Amit Sharma
-            </h3>
-            <p className="text-xs text-[#62605B] mt-1 font-mono">
-              Roll: Y23141042 • B.Tech CSE (6th Sem)
-            </p>
-            <p className="text-xs text-[#18212B] mt-3 leading-relaxed">
-              Discover seminars & workshops, register in 1-click, and access your tactile QR Event Pass.
-            </p>
-            <div className="mt-4 pt-3 border-t border-[#B9B4AA]/30 flex items-center justify-between text-xs font-bold text-[#B6533C]">
-              <span>Enter Student Panel</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+            <div className="mt-4 pt-3 border-t border-[#B9B4AA]/40 text-[11px] font-mono text-[#62605B]">
+              Navigation: Home • Events • My Events • My Pass • Profile
             </div>
           </div>
 
-          {/* Persona 2: Verified Organizer */}
-          <div 
-            onClick={() => onSelectRole('organizer', 'org-1')}
-            className="group cursor-pointer bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] hover:shadow-[4px_4px_0_0_#18212B] hover:-translate-y-0.5 transition-all"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="px-2 py-0.5 bg-[#EAE5DB] border border-[#B9B4AA] text-[11px] font-mono font-bold text-[#B08A4A] uppercase">
-                Role 2: Organizer
-              </span>
-              <span className="text-xs font-mono text-[#B08A4A] font-bold flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> DSW Verified
-              </span>
+          <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="px-2 py-0.5 bg-[#EAE5DB] border border-[#B9B4AA] text-[11px] font-mono font-bold text-[#B08A4A] uppercase">
+                  2. Organizer
+                </span>
+                <span className="text-xs font-mono text-[#B08A4A] font-bold flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" /> Requires Verification
+                </span>
+              </div>
+              <h3 className="font-bold text-lg text-[#18212B]">
+                Convene University Events
+              </h3>
+              <p className="text-xs text-[#62605B] mt-2 leading-relaxed">
+                Verified faculty conveners and student leads submit event proposals, manage participant rosters, and operate the optical QR attendance turnstile.
+              </p>
             </div>
-            <h3 className="font-bold text-lg text-[#18212B] group-hover:text-[#B6533C] transition-colors">
-              Dr. Alok Sahay
-            </h3>
-            <p className="text-xs text-[#62605B] mt-1 font-mono">
-              Faculty Convener • Dept. of Computer Science
-            </p>
-            <p className="text-xs text-[#18212B] mt-3 leading-relaxed">
-              Propose official events, manage registered attendee rosters, and scan entry QR passes.
-            </p>
-            <div className="mt-4 pt-3 border-t border-[#B9B4AA]/30 flex items-center justify-between text-xs font-bold text-[#B08A4A]">
-              <span>Enter Organizer Panel</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+            <div className="mt-4 pt-3 border-t border-[#B9B4AA]/40 text-[11px] font-mono text-[#62605B]">
+              Verified Access: Dashboard • My Events • Create • Participants • Attendance
             </div>
           </div>
 
-          {/* Persona 3: University Administrator */}
-          <div 
-            onClick={() => onSelectRole('admin', 'admin-1')}
-            className="group cursor-pointer bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] hover:shadow-[4px_4px_0_0_#18212B] hover:-translate-y-0.5 transition-all"
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="px-2 py-0.5 bg-[#EAE5DB] border border-[#B9B4AA] text-[11px] font-mono font-bold text-[#B6533C] uppercase">
-                Role 3: Administrator
-              </span>
-              <span className="text-xs font-mono text-[#B6533C] font-bold flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" /> Executive Proctor
-              </span>
+          <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="px-2 py-0.5 bg-[#EAE5DB] border border-[#B9B4AA] text-[11px] font-mono font-bold text-[#B6533C] uppercase">
+                  3. Administrator
+                </span>
+                <span className="text-xs font-mono text-[#B6533C] font-bold flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5" /> DSW Authority
+                </span>
+              </div>
+              <h3 className="font-bold text-lg text-[#18212B]">
+                Institutional Oversight
+              </h3>
+              <p className="text-xs text-[#62605B] mt-2 leading-relaxed">
+                Pre-authorized university administrators vet organizer credential requests, authorize official event submissions, and audit campus-wide participation.
+              </p>
             </div>
-            <h3 className="font-bold text-lg text-[#18212B] group-hover:text-[#B6533C] transition-colors">
-              Prof. S.P. Gautam
-            </h3>
-            <p className="text-xs text-[#62605B] mt-1 font-mono">
-              Dean of Students Welfare (DSW)
-            </p>
-            <p className="text-xs text-[#18212B] mt-3 leading-relaxed">
-              Verify organizer credential applications, review & authorize event proposals, audit campus attendance.
-            </p>
-            <div className="mt-4 pt-3 border-t border-[#B9B4AA]/30 flex items-center justify-between text-xs font-bold text-[#B6533C]">
-              <span>Enter Admin Panel</span>
-              <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+            <div className="mt-4 pt-3 border-t border-[#B9B4AA]/40 text-[11px] font-mono text-[#62605B]">
+              Controlled Portal: Organizer Requests • Events • Participants • Attendance
             </div>
           </div>
         </div>

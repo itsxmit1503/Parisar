@@ -1,15 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from '../context/AppContext';
 import { ToastProvider } from '../components/ui/Toast';
 import { DevToolbar } from '../components/layout/DevToolbar';
 import { Navbar, ActiveTab } from '../components/layout/Navbar';
 import { Footer } from '../components/layout/Footer';
 
-// Landing & Auth
+// Landing & Full-Page Authentication
 import { LandingPage } from '../components/landing/LandingPage';
-import { AuthModal } from '../components/auth/AuthModal';
+import { AuthView } from '../components/auth/AuthView';
 
 // Student Views
 import { StudentHome } from '../components/student/StudentHome';
@@ -17,7 +17,6 @@ import { EventDiscovery } from '../components/student/EventDiscovery';
 import { MyPassesView } from '../components/student/MyPassesView';
 import { CampusMap } from '../components/student/CampusMap';
 import { EventPassport } from '../components/student/EventPassport';
-import { CertificatesView } from '../components/student/CertificatesView';
 import { NotificationsView } from '../components/student/NotificationsView';
 import { EventDetailModal } from '../components/student/EventDetailModal';
 import { EventPassModal } from '../components/student/EventPassModal';
@@ -40,18 +39,50 @@ import { UserManagement } from '../components/admin/UserManagement';
 import { EventModeration } from '../components/admin/EventModeration';
 import { VenueCategorySettings } from '../components/admin/VenueCategorySettings';
 import { AuditLogView } from '../components/admin/AuditLogView';
+import { AdminAttendanceView } from '../components/admin/AdminAttendanceView';
+
+// Shared Authenticated Profile View (Organizer & Admin)
+import { RoleProfileView } from '../components/profile/RoleProfileView';
 
 // Mobile Promo
 import { ApkDownloadModal } from '../components/mobile-promo/ApkDownloadModal';
 
 import { Button } from '../components/ui/Button';
-import { CampusEvent, Registration, UserRole } from '../types';
+import { CampusEvent, Registration, User, UserRole } from '../types';
 
-function MainApp() {
-  const { currentUser, setCurrentUserId, events, registrations, allUsers } = useApp();
+const PATH_TO_TAB_MAP: Record<string, ActiveTab> = {
+  '/': 'landing',
+  '/login': 'auth-login',
+  '/signup': 'auth-signup',
+  '/admin/login': 'auth-admin',
+  '/student': 'student-home',
+  '/student/events': 'student-events',
+  '/student/my-events': 'student-my-events',
+  '/student/my-pass': 'student-passes',
+  '/student/profile': 'student-profile',
+  '/organizer': 'organizer-dashboard',
+  '/organizer/pending': 'organizer-pending',
+  '/organizer/events': 'organizer-events',
+  '/organizer/events/create': 'organizer-create',
+  '/organizer/participants': 'organizer-participants',
+  '/organizer/attendance': 'organizer-scanner',
+  '/organizer/profile': 'organizer-profile',
+  '/admin': 'admin-dashboard',
+  '/admin/organizer-requests': 'admin-organizer-requests',
+  '/admin/events': 'admin-moderation',
+  '/admin/participants': 'admin-participants',
+  '/admin/attendance': 'admin-attendance',
+  '/admin/settings': 'admin-venues',
+};
 
-  // Primary state: Landing Page First as requested by specification (Section 11)
-  const [activeTab, setActiveTab] = useState<ActiveTab>('landing');
+interface MainAppProps {
+  initialTab?: ActiveTab;
+}
+
+export function MainApp({ initialTab = 'landing' }: MainAppProps) {
+  const { currentUser, isAuthenticated, events, registrations } = useApp();
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
   const [targetVenueId, setTargetVenueId] = useState<string | undefined>(undefined);
   const [targetEventId, setTargetEventId] = useState<string | undefined>(undefined);
 
@@ -61,8 +92,28 @@ function MainApp() {
   const [isCreateEventOpen, setIsCreateEventOpen] = useState(false);
   const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState(false);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authInitialMode, setAuthInitialMode] = useState<'login' | 'signup'>('login');
+
+  // Sync initial URL pathname or ?tab= query parameter on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') as ActiveTab | null;
+      if (tabParam) {
+        setActiveTab(tabParam);
+        return;
+      }
+      const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+      if (PATH_TO_TAB_MAP[cleanPath] && initialTab === 'landing') {
+        const mappedTab = PATH_TO_TAB_MAP[cleanPath];
+        if (mappedTab === 'organizer-create') {
+          setActiveTab('organizer-events');
+          setIsCreateEventOpen(true);
+        } else {
+          setActiveTab(mappedTab);
+        }
+      }
+    }
+  }, [initialTab]);
 
   // Handle opening pass by event ID
   const handleOpenPassByEventId = (eventId: string) => {
@@ -73,84 +124,176 @@ function MainApp() {
     }
   };
 
-  // Handler for direct persona switching from landing page or prototype toolbar
-  const handleSelectRole = (role: 'student' | 'organizer' | 'admin', userId?: string) => {
-    if (userId) {
-      setCurrentUserId(userId);
-    }
+  // Route user to their role-specific panel
+  const navigateToRoleHome = (role: UserRole, organizerStatus?: User['organizerStatus']) => {
     if (role === 'student') {
       setActiveTab('student-home');
     } else if (role === 'organizer') {
-      const user = allUsers.find(u => u._id === userId) || currentUser;
-      if (user.organizerStatus === 'PENDING') {
+      if (organizerStatus && organizerStatus !== 'VERIFIED') {
         setActiveTab('organizer-pending');
       } else {
         setActiveTab('organizer-dashboard');
       }
-    } else {
+    } else if (role === 'admin') {
       setActiveTab('admin-dashboard');
     }
   };
 
   const handleEnterApp = () => {
-    // If user is already on a role, go to their dashboard, otherwise open auth modal
-    if (currentUser.role === 'organizer') {
-      if (currentUser.organizerStatus === 'PENDING') {
-        setActiveTab('organizer-pending');
-      } else {
-        setActiveTab('organizer-dashboard');
-      }
-    } else if (currentUser.role === 'admin') {
-      setActiveTab('admin-dashboard');
-    } else {
-      setActiveTab('student-home');
+    if (!isAuthenticated) {
+      setActiveTab('auth-login');
+      return;
     }
+    navigateToRoleHome(currentUser.role, currentUser.organizerStatus);
   };
+
+  // Determine effective tab enforcing Protected Routes & Strict Role Separation (Sections 16 & 20)
+  const getEffectiveTab = (): ActiveTab => {
+    // Publicly accessible tabs even when logged out
+    const publicTabs: ActiveTab[] = [
+      'landing',
+      'auth-login',
+      'auth-signup',
+      'auth-admin',
+      'student-events',
+      'student-map',
+      'mobile-apk',
+    ];
+
+    if (!isAuthenticated) {
+      if (publicTabs.includes(activeTab)) {
+        return activeTab;
+      }
+      // Unauthenticated access to any protected panel redirects to Login
+      if (activeTab.startsWith('admin-')) return 'auth-admin';
+      return 'auth-login';
+    }
+
+    // Authenticated user visiting auth pages -> redirect to their role panel
+    if (activeTab === 'auth-login' || activeTab === 'auth-signup' || activeTab === 'auth-admin') {
+      if (currentUser.role === 'student') return 'student-home';
+      if (currentUser.role === 'organizer') {
+        return currentUser.organizerStatus === 'VERIFIED' ? 'organizer-dashboard' : 'organizer-pending';
+      }
+      return 'admin-dashboard';
+    }
+
+    // Role-based panel enforcement
+    if (currentUser.role === 'student') {
+      if (activeTab.startsWith('organizer-') || activeTab.startsWith('admin-')) {
+        return 'student-home';
+      }
+      return activeTab;
+    }
+
+    if (currentUser.role === 'organizer') {
+      if (activeTab.startsWith('admin-') || activeTab === 'student-home' || activeTab === 'student-my-events' || activeTab === 'student-passes' || activeTab === 'student-profile') {
+        return currentUser.organizerStatus === 'VERIFIED' ? 'organizer-dashboard' : 'organizer-pending';
+      }
+      // Pending or Rejected Organizer cannot access full organizer tools
+      if (currentUser.organizerStatus !== 'VERIFIED') {
+        if (activeTab === 'organizer-profile' || activeTab === 'landing' || activeTab === 'student-events' || activeTab === 'student-map') {
+          return activeTab;
+        }
+        return 'organizer-pending';
+      }
+      return activeTab;
+    }
+
+    if (currentUser.role === 'admin') {
+      if (activeTab.startsWith('organizer-') || activeTab === 'student-home' || activeTab === 'student-my-events' || activeTab === 'student-passes' || activeTab === 'student-profile') {
+        return 'admin-dashboard';
+      }
+      return activeTab;
+    }
+
+    return activeTab;
+  };
+
+  const effectiveTab = getEffectiveTab();
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F4F0E8] text-[#18212B] font-sans antialiased selection:bg-[#B6533C] selection:text-white">
-      {/* Discreet Collapsible Prototype Testing Toolbar */}
-      <DevToolbar activeTab={activeTab} setActiveTab={setActiveTab} />
+      {/* Developer-only toolbar (hidden in normal product UI unless ?dev=true or Ctrl+Shift+D) */}
+      <DevToolbar activeTab={effectiveTab} setActiveTab={setActiveTab} />
 
       {/* Universal PARISAR Navigation Bar */}
       <Navbar 
-        activeTab={activeTab} 
+        activeTab={effectiveTab} 
         setActiveTab={setActiveTab}
-        onCreateEvent={() => setIsCreateEventOpen(true)}
+        onCreateEvent={() => {
+          if (currentUser.role === 'organizer' && currentUser.organizerStatus === 'VERIFIED') {
+            setIsCreateEventOpen(true);
+          }
+        }}
         onSendAnnouncement={() => setIsAnnouncementsOpen(true)}
+        onLogout={() => setActiveTab('landing')}
       />
 
-      {/* Sub-bar for quick landing page return or login */}
-      {activeTab === 'landing' && (
+      {/* Institutional Banner on Landing Page */}
+      {effectiveTab === 'landing' && (
         <div className="bg-[#EAE5DB] border-b border-[#B9B4AA] py-2 px-4 text-center text-xs font-mono">
           <span className="text-[#62605B]">Dr. Harisingh Gour Vishwavidyalaya • Central University, Sagar (M.P.) • </span>
-          <button 
-            onClick={() => {
-              setAuthInitialMode('login');
-              setIsAuthModalOpen(true);
-            }}
-            className="text-[#B6533C] font-bold underline hover:text-[#18212B] ml-1"
-          >
-            Sign In / Switch Persona
-          </button>
+          {!isAuthenticated ? (
+            <>
+              <button 
+                onClick={() => setActiveTab('auth-login')}
+                className="text-[#B6533C] font-bold underline hover:text-[#18212B] ml-1 cursor-pointer"
+              >
+                Sign In
+              </button>
+              <span className="text-[#62605B] mx-1.5">or</span>
+              <button 
+                onClick={() => setActiveTab('auth-signup')}
+                className="text-[#18212B] font-bold underline hover:text-[#B6533C] cursor-pointer"
+              >
+                Create Account
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleEnterApp}
+              className="text-[#B6533C] font-bold underline hover:text-[#18212B] ml-1 cursor-pointer"
+            >
+              Return to {currentUser.role === 'admin' ? 'Admin' : currentUser.role === 'organizer' ? 'Organizer' : 'Student'} Panel →
+            </button>
+          )}
         </div>
       )}
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-6 sm:pt-8">
-        {/* LANDING PAGE (Section 11: Landing Page First) */}
-        {activeTab === 'landing' && (
+        {/* LANDING PAGE */}
+        {effectiveTab === 'landing' && (
           <LandingPage
             onEnterApp={handleEnterApp}
+            onLogin={() => setActiveTab('auth-login')}
+            onSignup={() => setActiveTab('auth-signup')}
             onExploreEvents={() => setActiveTab('student-events')}
-            onSelectRole={handleSelectRole}
             onOpenEvent={evt => setSelectedEventForDetail(evt)}
             onOpenApkModal={() => setIsApkModalOpen(true)}
           />
         )}
 
-        {/* STUDENT FLOWS */}
-        {activeTab === 'student-home' && (
+        {/* FULL-PAGE AUTHENTICATION VIEWS (Login / Signup / Controlled Admin Login) */}
+        {(effectiveTab === 'auth-login' || effectiveTab === 'auth-signup' || effectiveTab === 'auth-admin') && (
+          <AuthView
+            initialMode={
+              effectiveTab === 'auth-signup'
+                ? 'signup'
+                : effectiveTab === 'auth-admin'
+                ? 'admin-login'
+                : 'login'
+            }
+            onSuccess={(user: User) => {
+              navigateToRoleHome(user.role, user.organizerStatus);
+            }}
+            onBackToLanding={() => setActiveTab('landing')}
+          />
+        )}
+
+        {/* STUDENT PANEL VIEWS */}
+        {effectiveTab === 'student-home' && (
           <StudentHome
             onOpenEvent={evt => setSelectedEventForDetail(evt)}
             onOpenPass={(reg, evt) => setActivePassData({ registration: reg, event: evt })}
@@ -164,35 +307,44 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'student-events' && (
+        {effectiveTab === 'student-events' && (
           <EventDiscovery
             onOpenEvent={evt => setSelectedEventForDetail(evt)}
             onOpenPass={handleOpenPassByEventId}
           />
         )}
 
-        {activeTab === 'student-passes' && (
+        {effectiveTab === 'student-my-events' && (
+          <ProfileView
+            initialSubTab="my-events"
+            onOpenPass={(reg, evt) => setActivePassData({ registration: reg, event: evt })}
+            onExploreEvents={() => setActiveTab('student-events')}
+            onLogout={() => setActiveTab('landing')}
+          />
+        )}
+
+        {effectiveTab === 'student-passes' && (
           <MyPassesView
             onOpenPass={(reg, evt) => setActivePassData({ registration: reg, event: evt })}
             onExploreEvents={() => setActiveTab('student-events')}
           />
         )}
 
-        {activeTab === 'student-map' && (
+        {effectiveTab === 'student-map' && (
           <CampusMap
             initialVenueId={targetVenueId}
             onOpenEvent={evt => setSelectedEventForDetail(evt)}
           />
         )}
 
-        {activeTab === 'student-passport' && (
+        {effectiveTab === 'student-passport' && (
           <EventPassport
             onViewCertificates={() => setActiveTab('student-passes')}
             onExploreEvents={() => setActiveTab('student-events')}
           />
         )}
 
-        {activeTab === 'student-notifications' && (
+        {effectiveTab === 'student-notifications' && (
           <NotificationsView
             onNavigateToPass={eventId => {
               if (eventId) handleOpenPassByEventId(eventId);
@@ -202,14 +354,16 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'student-profile' && (
+        {effectiveTab === 'student-profile' && (
           <ProfileView
+            initialSubTab="settings"
             onOpenPass={(reg, evt) => setActivePassData({ registration: reg, event: evt })}
             onExploreEvents={() => setActiveTab('student-events')}
+            onLogout={() => setActiveTab('landing')}
           />
         )}
 
-        {activeTab === 'mobile-apk' && (
+        {effectiveTab === 'mobile-apk' && (
           <div className="max-w-4xl mx-auto py-8">
             <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-8 shadow-[2px_2px_0_0_#18212B] text-center space-y-4">
               <div className="w-16 h-16 rounded-[3px] bg-[#EAE5DB] text-[#B6533C] border border-[#B9B4AA] flex items-center justify-center mx-auto shadow-[2px_2px_0_0_#18212B]">
@@ -234,45 +388,37 @@ function MainApp() {
           </div>
         )}
 
-        {/* ORGANIZER FLOWS */}
-        {activeTab === 'organizer-pending' && (
+        {/* ORGANIZER PANEL VIEWS */}
+        {effectiveTab === 'organizer-pending' && (
           <OrganizerPendingView
-            onSwitchToAdmin={() => handleSelectRole('admin', 'admin-1')}
-            onSwitchToStudent={() => handleSelectRole('student', 'student-1')}
+            onLogout={() => setActiveTab('landing')}
           />
         )}
 
-        {activeTab === 'organizer-dashboard' && (
-          currentUser.organizerStatus === 'PENDING' ? (
-            <OrganizerPendingView
-              onSwitchToAdmin={() => handleSelectRole('admin', 'admin-1')}
-              onSwitchToStudent={() => handleSelectRole('student', 'student-1')}
-            />
-          ) : (
-            <OrganizerDashboard
-              onCreateEvent={() => setIsCreateEventOpen(true)}
-              onManageEvents={() => setActiveTab('organizer-events')}
-              onScanAttendance={eId => {
-                if (eId) setTargetEventId(eId);
-                setActiveTab('organizer-scanner');
-              }}
-              onViewParticipants={eId => {
-                if (eId) setTargetEventId(eId);
-                setActiveTab('organizer-participants');
-              }}
-              onAnnouncements={eId => {
-                if (eId) setTargetEventId(eId);
-                setIsAnnouncementsOpen(true);
-              }}
-              onCertificates={eId => {
-                if (eId) setTargetEventId(eId);
-                setActiveTab('organizer-certificates');
-              }}
-            />
-          )
+        {effectiveTab === 'organizer-dashboard' && (
+          <OrganizerDashboard
+            onCreateEvent={() => setIsCreateEventOpen(true)}
+            onManageEvents={() => setActiveTab('organizer-events')}
+            onScanAttendance={eId => {
+              if (eId) setTargetEventId(eId);
+              setActiveTab('organizer-scanner');
+            }}
+            onViewParticipants={eId => {
+              if (eId) setTargetEventId(eId);
+              setActiveTab('organizer-participants');
+            }}
+            onAnnouncements={eId => {
+              if (eId) setTargetEventId(eId);
+              setIsAnnouncementsOpen(true);
+            }}
+            onCertificates={eId => {
+              if (eId) setTargetEventId(eId);
+              setActiveTab('organizer-certificates');
+            }}
+          />
         )}
 
-        {activeTab === 'organizer-events' && (
+        {effectiveTab === 'organizer-events' && (
           <ManageEventsList
             onCreateEvent={() => setIsCreateEventOpen(true)}
             onScanAttendance={eId => {
@@ -294,46 +440,66 @@ function MainApp() {
           />
         )}
 
-        {activeTab === 'organizer-scanner' && (
-          <QRScannerView />
+        {effectiveTab === 'organizer-scanner' && (
+          <QRScannerView
+            onNavigateToParticipants={eId => {
+              setTargetEventId(eId);
+              setActiveTab('organizer-participants');
+            }}
+          />
         )}
 
-        {activeTab === 'organizer-participants' && (
+        {effectiveTab === 'organizer-participants' && (
           <ParticipantsView initialEventId={targetEventId} />
         )}
 
-        {activeTab === 'organizer-certificates' && (
+        {effectiveTab === 'organizer-certificates' && (
           <CertificatesManager initialEventId={targetEventId} />
         )}
 
-        {/* ADMINISTRATOR FLOWS */}
-        {activeTab === 'admin-dashboard' && (
+        {effectiveTab === 'organizer-profile' && (
+          <RoleProfileView onLogout={() => setActiveTab('landing')} />
+        )}
+
+        {/* UNIVERSITY ADMINISTRATOR PANEL VIEWS */}
+        {effectiveTab === 'admin-dashboard' && (
           <AdminDashboard
+            onNavigateToOrganizerRequests={() => setActiveTab('admin-organizer-requests')}
             onNavigateToModeration={() => setActiveTab('admin-moderation')}
-            onNavigateToUsers={() => setActiveTab('admin-users')}
+            onNavigateToParticipants={() => setActiveTab('admin-participants')}
+            onNavigateToAttendance={() => setActiveTab('admin-attendance')}
             onNavigateToVenues={() => setActiveTab('admin-venues')}
+            onNavigateToUsers={() => setActiveTab('admin-users')}
             onNavigateToAudit={() => setActiveTab('admin-audit')}
           />
         )}
 
-        {activeTab === 'admin-organizer-requests' && (
+        {effectiveTab === 'admin-organizer-requests' && (
           <OrganizerRequestsView />
         )}
 
-        {activeTab === 'admin-moderation' && (
+        {effectiveTab === 'admin-moderation' && (
           <EventModeration />
         )}
 
-        {activeTab === 'admin-users' && (
+        {(effectiveTab === 'admin-participants' || effectiveTab === 'admin-users') && (
           <UserManagement />
         )}
 
-        {activeTab === 'admin-venues' && (
+        {effectiveTab === 'admin-attendance' && (
+          <AdminAttendanceView />
+        )}
+
+        {effectiveTab === 'admin-venues' && (
           <VenueCategorySettings />
         )}
 
-        {activeTab === 'admin-audit' && (
+        {effectiveTab === 'admin-audit' && (
           <AuditLogView />
+        )}
+
+        {effectiveTab === 'admin-profile' && (
+          <RoleProfileView onLogout={() => setActiveTab('landing')} />
         )}
       </main>
 
@@ -386,34 +552,20 @@ function MainApp() {
         isOpen={isApkModalOpen}
         onClose={() => setIsApkModalOpen(false)}
       />
-
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
-        initialMode={authInitialMode}
-        onSuccess={role => {
-          if (role === 'student') setActiveTab('student-home');
-          else if (role === 'organizer') {
-            if (currentUser.organizerStatus === 'PENDING') {
-              setActiveTab('organizer-pending');
-            } else {
-              setActiveTab('organizer-dashboard');
-            }
-          } else {
-            setActiveTab('admin-dashboard');
-          }
-        }}
-      />
     </div>
   );
 }
 
-export default function Home() {
+export function ParisarRouteApp({ initialTab = 'landing' }: { initialTab?: ActiveTab }) {
   return (
     <AppProvider>
       <ToastProvider>
-        <MainApp />
+        <MainApp initialTab={initialTab} />
       </ToastProvider>
     </AppProvider>
   );
+}
+
+export default function Home() {
+  return <ParisarRouteApp initialTab="landing" />;
 }

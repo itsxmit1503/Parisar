@@ -9,7 +9,8 @@ import {
   AlertTriangle, 
   XCircle, 
   AlertOctagon, 
-  History
+  History,
+  Loader2
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 
@@ -20,21 +21,30 @@ interface QRScannerViewProps {
 export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToParticipants }) => {
   const { events, verifyAndCheckIn, attendance } = useApp();
 
-  const organizerEvents = events.filter(e => e.status === 'PUBLISHED' || e.status === 'ONGOING');
+  const organizerEvents = events.filter(e => e.status === 'PUBLISHED' || e.status === 'APPROVED' || e.status === 'ONGOING');
   const [selectedEventId, setSelectedEventId] = useState<string>(
     organizerEvents[0]?._id || events[0]?._id || ''
   );
 
   const [inputToken, setInputToken] = useState('');
+  const [isScanning, setIsScanning] = useState(false);
   const [lastResult, setLastResult] = useState<ScanVerificationResult | null>(null);
+  const [lastErrorSubType, setLastErrorSubType] = useState<'INVALID' | 'NOT_FOUND' | null>(null);
 
   const currentEventAttendance = attendance.filter(a => a.eventId === selectedEventId);
 
-  const handleVerify = (tokenToVerify: string, method: 'qr' | 'manual' = 'qr') => {
+  const handleVerify = (tokenToVerify: string, method: 'qr' | 'manual' = 'qr', subType?: 'INVALID' | 'NOT_FOUND') => {
     if (!tokenToVerify.trim()) return;
-    const res = verifyAndCheckIn(selectedEventId, tokenToVerify.trim(), method);
-    setLastResult(res);
-    setInputToken('');
+    setIsScanning(true);
+    setLastResult(null);
+
+    setTimeout(() => {
+      const res = verifyAndCheckIn(selectedEventId, tokenToVerify.trim(), method);
+      setLastResult(res);
+      setLastErrorSubType(subType || (tokenToVerify.includes('NOTFOUND') ? 'NOT_FOUND' : 'INVALID'));
+      setIsScanning(false);
+      setInputToken('');
+    }, 280);
   };
 
   return (
@@ -86,9 +96,16 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
                   Optical Scanner Feed
                 </span>
               </div>
-              <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[2px] bg-[#EBF3ED] text-[#2F613B] border border-[#2F613B]/30">
-                Ready for Pass
-              </span>
+              {isScanning ? (
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[2px] bg-[#FAF0E6] text-[#B08A4A] border border-[#B08A4A]/40 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Scanning Pass...
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[2px] bg-[#EBF3ED] text-[#2F613B] border border-[#2F613B]/30">
+                  Ready for Pass
+                </span>
+              )}
             </div>
 
             {/* Viewfinder Canvas - Precision Academic Hardware Bezel */}
@@ -112,7 +129,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
               </div>
 
               <div className="text-[11px] text-[#EAE5DB] font-mono mt-3">
-                Align student QR pass inside optical reticle
+                {isScanning ? 'Verifying cryptographic token against event roster...' : 'Align student QR pass inside optical reticle'}
               </div>
             </div>
 
@@ -135,6 +152,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
                 <Button
                   variant="primary"
                   size="sm"
+                  disabled={isScanning}
                   onClick={() => handleVerify(inputToken, 'manual')}
                 >
                   Verify Token
@@ -142,18 +160,18 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
               </div>
             </div>
 
-            {/* One-Click Scenario Simulator (Section 19: All 4 States) */}
+            {/* Quick Verification Test Triggers (Section 23.7: Valid, Already Checked In, Wrong Event, Registration Not Found, Invalid) */}
             <div className="bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] p-3.5 space-y-2.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
               <div className="text-xs font-mono font-bold text-[#18212B] flex items-center justify-between">
-                <span>DHSGSU Turnstile Scenario Simulator</span>
-                <span className="text-[10px] text-[#62605B] font-normal">Click to test pass states:</span>
+                <span>Turnstile Verification Test Passes</span>
+                <span className="text-[10px] text-[#62605B] font-normal">Click to verify pass states:</span>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                 <button
                   onClick={() => handleVerify('PARISAR-PASS-DL-CS042', 'qr')}
                   className="p-2 text-left bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] shadow-[1px_1px_0_0_#18212B] hover:border-[#2F613B] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
                 >
-                  <div className="font-bold text-[#2F613B] text-[11px]">1. Valid Pass Test</div>
+                  <div className="font-bold text-[#2F613B] text-[11px]">1. Valid Pass</div>
                   <div className="text-[10px] text-[#62605B] font-mono truncate">Amit Sharma (Y23141042)</div>
                 </button>
 
@@ -161,24 +179,24 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
                   onClick={() => handleVerify('PARISAR-PASS-DL-CS088', 'qr')}
                   className="p-2 text-left bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] shadow-[1px_1px_0_0_#18212B] hover:border-[#B08A4A] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
                 >
-                  <div className="font-bold text-[#B08A4A] text-[11px]">2. Duplicate Scan Test</div>
-                  <div className="text-[10px] text-[#62605B] font-mono truncate">Rohan Mehra (Already In)</div>
+                  <div className="font-bold text-[#B08A4A] text-[11px]">2. Already Checked In</div>
+                  <div className="text-[10px] text-[#62605B] font-mono truncate">Rohan Mehra (Duplicate Scan)</div>
                 </button>
 
                 <button
                   onClick={() => handleVerify('PARISAR-PASS-UT-EC118', 'qr')}
                   className="p-2 text-left bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] shadow-[1px_1px_0_0_#18212B] hover:border-[#B6533C] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
                 >
-                  <div className="font-bold text-[#B6533C] text-[11px]">3. Wrong Event Pass</div>
-                  <div className="text-[10px] text-[#62605B] font-mono truncate">Pass for Youth Festival</div>
+                  <div className="font-bold text-[#B6533C] text-[11px]">3. Wrong Event</div>
+                  <div className="text-[10px] text-[#62605B] font-mono truncate">Pass for Abhivyakti Youth Fest</div>
                 </button>
 
                 <button
-                  onClick={() => handleVerify('FAKE-PARISAR-TOKEN-999', 'qr')}
+                  onClick={() => handleVerify('PARISAR-NOTFOUND-000', 'qr', 'NOT_FOUND')}
                   className="p-2 text-left bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] shadow-[1px_1px_0_0_#18212B] hover:border-[#A83226] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
                 >
-                  <div className="font-bold text-[#A83226] text-[11px]">4. Invalid Token Test</div>
-                  <div className="text-[10px] text-[#62605B] font-mono truncate">Counterfeit or Expired</div>
+                  <div className="font-bold text-[#A83226] text-[11px]">4. Registration Not Found / Invalid</div>
+                  <div className="text-[10px] text-[#62605B] font-mono truncate">Unregistered or Invalid QR</div>
                 </button>
               </div>
             </div>
@@ -193,7 +211,17 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
               Scanner Output & Decision
             </h3>
 
-            {lastResult ? (
+            {isScanning ? (
+              <div className="p-6 bg-[#FAF0E6] border-2 border-[#B08A4A] rounded-[3px] text-center space-y-2">
+                <Loader2 className="w-6 h-6 text-[#B08A4A] animate-spin mx-auto" />
+                <div className="text-xs font-extrabold uppercase tracking-wider text-[#B08A4A]">
+                  SCANNING & VERIFYING PASS...
+                </div>
+                <p className="text-[11px] font-mono text-[#62605B]">
+                  Checking DHSGSU Event Roster & Attendance Ledger
+                </p>
+              </div>
+            ) : lastResult ? (
               <div
                 className={`p-4 rounded-[3px] border-2 text-xs space-y-2.5 shadow-[2px_2px_0_0_#18212B] ${
                   lastResult.status === 'SUCCESS'
@@ -212,10 +240,14 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
                   {lastResult.status === 'INVALID' && <XCircle className="w-5 h-5 shrink-0" />}
 
                   <span>
-                    {lastResult.status === 'SUCCESS' && 'ATTENDANCE CONFIRMED'}
-                    {lastResult.status === 'DUPLICATE' && 'DUPLICATE SCAN DETECTED'}
-                    {lastResult.status === 'WRONG_EVENT' && 'PASS FOR DIFFERENT EVENT'}
-                    {lastResult.status === 'INVALID' && 'COUNTERFEIT / INVALID PASS'}
+                    {lastResult.status === 'SUCCESS' && 'VALID — ATTENDANCE CONFIRMED'}
+                    {lastResult.status === 'DUPLICATE' && 'ALREADY CHECKED IN'}
+                    {lastResult.status === 'WRONG_EVENT' && 'WRONG EVENT PASS'}
+                    {lastResult.status === 'INVALID' && (
+                      lastErrorSubType === 'NOT_FOUND'
+                        ? 'REGISTRATION NOT FOUND'
+                        : 'INVALID PASS TOKEN'
+                    )}
                   </span>
                 </div>
 
@@ -253,7 +285,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
               {onNavigateToParticipants && (
                 <button
                   onClick={() => onNavigateToParticipants(selectedEventId)}
-                  className="text-xs font-bold text-[#B6533C] hover:underline"
+                  className="text-xs font-bold text-[#B6533C] hover:underline cursor-pointer"
                 >
                   Full Roster →
                 </button>
@@ -261,22 +293,28 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToPartic
             </div>
 
             <div className="space-y-2 max-h-56 overflow-y-auto">
-              {currentEventAttendance.map(att => (
-                <div
-                  key={att._id}
-                  className="p-2.5 bg-[#EAE5DB]/60 border border-[#B9B4AA] rounded-[2px] text-xs flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-bold text-[#18212B]">{att.userName}</div>
-                    <div className="text-[11px] text-[#62605B] font-mono">{att.userRollNumber} • {att.userDepartment}</div>
+              {currentEventAttendance.length > 0 ? (
+                currentEventAttendance.map(att => (
+                  <div
+                    key={att._id}
+                    className="p-2.5 bg-[#EAE5DB]/60 border border-[#B9B4AA] rounded-[2px] text-xs flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="font-bold text-[#18212B]">{att.userName}</div>
+                      <div className="text-[11px] text-[#62605B] font-mono">{att.userRollNumber} • {att.userDepartment}</div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] font-mono text-[#2F613B] font-bold bg-[#EBF3ED] px-2 py-0.5 rounded-[2px] border border-[#2F613B]/30">
+                        {new Date(att.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[10px] font-mono text-[#2F613B] font-bold bg-[#EBF3ED] px-2 py-0.5 rounded-[2px] border border-[#2F613B]/30">
-                      {new Date(att.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
+                ))
+              ) : (
+                <div className="p-4 text-center text-xs text-[#62605B] font-mono">
+                  No participants checked in for this session yet.
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>

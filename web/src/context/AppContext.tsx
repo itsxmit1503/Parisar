@@ -30,9 +30,32 @@ import {
 } from '../lib/mockData';
 
 interface AppContextType {
-  // Current session
+  // Current session & Auth state
   currentUser: User;
+  isAuthenticated: boolean;
   setCurrentUserId: (id: string) => void;
+  loginWithCredentials: (identifier: string, password?: string, adminOnly?: boolean) => ApiResponse<User>;
+  registerStudentAccount: (data: {
+    name: string;
+    rollNumber: string;
+    email: string;
+    department: string;
+    semester: number;
+    password?: string;
+  }) => ApiResponse<User>;
+  registerOrganizerAccount: (data: {
+    name: string;
+    universityId: string;
+    email: string;
+    department: string;
+    designation: string;
+    phone: string;
+    reason: string;
+    password?: string;
+  }) => ApiResponse<User>;
+  resubmitOrganizerVerification: (reason: string, designation?: string, department?: string) => ApiResponse<OrganizerVerificationRequest>;
+  updateUserProfile: (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization'>>) => ApiResponse<User>;
+  logout: () => void;
   allUsers: User[];
   
   // Data collections
@@ -74,12 +97,13 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STORAGE_PREFIX = 'parisar_dhsgsu_v1_';
+const STORAGE_PREFIX = 'parisar_dhsgsu_v2_';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   
   const [currentUserId, setCurrentUserIdState] = useState<string>('student-1');
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [allUsers, setAllUsers] = useState<User[]>(INITIAL_USERS);
   const [events, setEvents] = useState<CampusEvent[]>(INITIAL_EVENTS);
   const [venues] = useState<CampusVenue[]>(CAMPUS_VENUES);
@@ -119,6 +143,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const storedUser = localStorage.getItem(`${STORAGE_PREFIX}currentUserId`);
       if (storedUser) setCurrentUserIdState(storedUser);
+
+      const storedAuth = localStorage.getItem(`${STORAGE_PREFIX}isAuthenticated`);
+      if (storedAuth === 'true') setIsAuthenticated(true);
     } catch {
       // Fallback to initial mock if error reading
     } finally {
@@ -139,15 +166,250 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_PREFIX}feedback`, JSON.stringify(feedback));
       localStorage.setItem(`${STORAGE_PREFIX}organizerRequests`, JSON.stringify(organizerRequests));
       localStorage.setItem(`${STORAGE_PREFIX}currentUserId`, currentUserId);
+      localStorage.setItem(`${STORAGE_PREFIX}isAuthenticated`, String(isAuthenticated));
     } catch (e) {
       console.warn('Storage quota or persistence warning:', e);
     }
-  }, [isLoaded, allUsers, events, registrations, attendance, certificates, notifications, feedback, organizerRequests, currentUserId]);
+  }, [isLoaded, allUsers, events, registrations, attendance, certificates, notifications, feedback, organizerRequests, currentUserId, isAuthenticated]);
 
   const currentUser = allUsers.find(u => u._id === currentUserId) || allUsers[0];
 
   const setCurrentUserId = (id: string) => {
     setCurrentUserIdState(id);
+    setIsAuthenticated(true);
+  };
+
+  const logout = () => {
+    setIsAuthenticated(false);
+    try {
+      localStorage.setItem(`${STORAGE_PREFIX}isAuthenticated`, 'false');
+    } catch {
+      // ignore
+    }
+  };
+
+  const loginWithCredentials = (identifier: string, password?: string, adminOnly = false): ApiResponse<User> => {
+    const cleanId = identifier.trim().toLowerCase();
+    if (!cleanId) {
+      return { success: false, error: { code: 'EMPTY_IDENTIFIER', message: 'Please enter your DHSGSU Roll Number, Employee ID, or University Email.' } };
+    }
+    if (password !== undefined && password.trim().length < 4) {
+      return { success: false, error: { code: 'INVALID_PASSWORD', message: 'Password must be at least 4 characters long.' } };
+    }
+
+    const found = allUsers.find(u =>
+      u._id.toLowerCase() === cleanId ||
+      u.email.toLowerCase() === cleanId ||
+      (u.rollNumber && u.rollNumber.toLowerCase() === cleanId) ||
+      u.name.toLowerCase() === cleanId
+    );
+
+    if (!found) {
+      return {
+        success: false,
+        error: {
+          code: 'ACCOUNT_NOT_FOUND',
+          message: `No registered DHSGSU account matches "${identifier.trim()}". Please check your University ID / Email or create a new campus account.`
+        }
+      };
+    }
+
+    if (adminOnly && found.role !== 'admin') {
+      return {
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED_ADMIN',
+          message: 'Access Denied: This credential is not authorized for the University Administrator Console.'
+        }
+      };
+    }
+
+    setCurrentUserIdState(found._id);
+    setIsAuthenticated(true);
+    return { success: true, data: found };
+  };
+
+  const registerStudentAccount = (data: {
+    name: string;
+    rollNumber: string;
+    email: string;
+    department: string;
+    semester: number;
+    password?: string;
+  }): ApiResponse<User> => {
+    const cleanEmail = data.email.trim().toLowerCase();
+    const cleanRoll = data.rollNumber.trim().toUpperCase();
+
+    if (!data.name.trim() || !cleanRoll || !cleanEmail) {
+      return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Full Name, Roll Number, and University Email are mandatory.' } };
+    }
+
+    const duplicate = allUsers.find(
+      u => u.email.toLowerCase() === cleanEmail || (u.rollNumber && u.rollNumber.toUpperCase() === cleanRoll)
+    );
+    if (duplicate) {
+      return {
+        success: false,
+        error: { code: 'DUPLICATE_ACCOUNT', message: 'An account with this University Roll Number or Email already exists. Please sign in instead.' }
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const newUser: User = {
+      _id: `stu-${Date.now()}`,
+      name: data.name.trim(),
+      email: cleanEmail,
+      rollNumber: cleanRoll,
+      department: data.department,
+      semester: data.semester,
+      role: 'student',
+      organizerStatus: 'NONE',
+      interests: ['Workshop', 'Seminar', 'Cultural', 'Competition'],
+      profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+      phone: '+91 98260 00000',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    setAllUsers(prev => [newUser, ...prev]);
+    setCurrentUserIdState(newUser._id);
+    setIsAuthenticated(true);
+    return { success: true, data: newUser };
+  };
+
+  const registerOrganizerAccount = (data: {
+    name: string;
+    universityId: string;
+    email: string;
+    department: string;
+    designation: string;
+    phone: string;
+    reason: string;
+    password?: string;
+  }): ApiResponse<User> => {
+    const cleanEmail = data.email.trim().toLowerCase();
+    const cleanId = data.universityId.trim().toUpperCase();
+
+    if (!data.name.trim() || !cleanId || !cleanEmail || !data.reason.trim()) {
+      return {
+        success: false,
+        error: { code: 'VALIDATION_ERROR', message: 'Full Name, University ID, Email, and Justification for organizing are mandatory.' }
+      };
+    }
+
+    const duplicate = allUsers.find(
+      u => u.email.toLowerCase() === cleanEmail || (u.rollNumber && u.rollNumber.toUpperCase() === cleanId)
+    );
+    if (duplicate) {
+      return {
+        success: false,
+        error: { code: 'DUPLICATE_ACCOUNT', message: 'An account with this University ID or Email already exists. Please sign in instead.' }
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const userId = `org-applicant-${Date.now()}`;
+    const reqId = `req-${Date.now()}`;
+
+    const newReq: OrganizerVerificationRequest = {
+      id: reqId,
+      userId,
+      fullName: data.name.trim(),
+      universityId: cleanId,
+      department: data.department,
+      designation: data.designation.trim() || 'Event Convener Applicant',
+      email: cleanEmail,
+      phone: data.phone.trim() || '+91 98260 00000',
+      reason: data.reason.trim(),
+      status: 'PENDING',
+      submittedAt: nowIso,
+    };
+
+    const newUser: User = {
+      _id: userId,
+      name: data.name.trim(),
+      email: cleanEmail,
+      rollNumber: cleanId,
+      department: data.department,
+      designation: data.designation.trim() || 'Event Convener Applicant',
+      organization: data.department,
+      role: 'organizer',
+      organizerStatus: 'PENDING',
+      organizerRequest: newReq,
+      interests: ['Seminar', 'Workshop', 'Competition'],
+      profileImage: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80',
+      phone: data.phone.trim() || '+91 98260 00000',
+      createdAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    setOrganizerRequests(prev => [newReq, ...prev]);
+    setAllUsers(prev => [newUser, ...prev]);
+    setCurrentUserIdState(newUser._id);
+    setIsAuthenticated(true);
+    return { success: true, data: newUser };
+  };
+
+  const resubmitOrganizerVerification = (reason: string, designation?: string, department?: string): ApiResponse<OrganizerVerificationRequest> => {
+    if (!reason.trim()) {
+      return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Please provide an updated justification for organizer verification.' } };
+    }
+
+    const nowIso = new Date().toISOString();
+    const existingReq = organizerRequests.find(r => r.userId === currentUser._id || r.email === currentUser.email);
+
+    const updatedReq: OrganizerVerificationRequest = existingReq
+      ? {
+          ...existingReq,
+          reason: reason.trim(),
+          designation: designation?.trim() || existingReq.designation,
+          department: department || existingReq.department,
+          status: 'PENDING',
+          submittedAt: nowIso,
+          reviewedAt: undefined,
+          reviewRemarks: undefined,
+        }
+      : {
+          id: `req-${Date.now()}`,
+          userId: currentUser._id,
+          fullName: currentUser.name,
+          universityId: currentUser.rollNumber || 'EMP-DHSGSU',
+          department: department || currentUser.department,
+          designation: designation?.trim() || currentUser.designation || 'Faculty / Society Organizer',
+          email: currentUser.email,
+          phone: currentUser.phone || '+91 98260 00000',
+          reason: reason.trim(),
+          status: 'PENDING',
+          submittedAt: nowIso,
+        };
+
+    if (existingReq) {
+      setOrganizerRequests(prev => prev.map(r => r.id === existingReq.id ? updatedReq : r));
+    } else {
+      setOrganizerRequests(prev => [updatedReq, ...prev]);
+    }
+
+    setAllUsers(prev => prev.map(u => u._id === currentUser._id ? {
+      ...u,
+      role: 'organizer',
+      organizerStatus: 'PENDING',
+      designation: designation?.trim() || u.designation,
+      department: department || u.department,
+      updatedAt: nowIso,
+    } : u));
+
+    return { success: true, data: updatedReq };
+  };
+
+  const updateUserProfile = (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization'>>): ApiResponse<User> => {
+    const nowIso = new Date().toISOString();
+    const updatedUser: User = {
+      ...currentUser,
+      ...updates,
+      updatedAt: nowIso,
+    };
+    setAllUsers(prev => prev.map(u => u._id === currentUser._id ? updatedUser : u));
+    return { success: true, data: updatedUser };
   };
 
   const resetPrototypeData = () => {
@@ -159,7 +421,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.removeItem(`${STORAGE_PREFIX}certificates`);
       localStorage.removeItem(`${STORAGE_PREFIX}notifications`);
       localStorage.removeItem(`${STORAGE_PREFIX}feedback`);
+      localStorage.removeItem(`${STORAGE_PREFIX}organizerRequests`);
       localStorage.removeItem(`${STORAGE_PREFIX}currentUserId`);
+      localStorage.removeItem(`${STORAGE_PREFIX}isAuthenticated`);
     } catch {
       // ignore
     }
@@ -170,7 +434,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCertificates(INITIAL_CERTIFICATES);
     setNotifications(INITIAL_NOTIFICATIONS);
     setFeedback(INITIAL_FEEDBACK);
+    setOrganizerRequests(INITIAL_ORGANIZER_REQUESTS);
     setCurrentUserIdState('student-1');
+    setIsAuthenticated(false);
   };
 
   // ==========================================
@@ -182,11 +448,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Requested event could not be found.' } };
     }
 
-    if (targetEvent.status !== 'PUBLISHED') {
-      return { success: false, error: { code: 'EVENT_NOT_OPEN', message: 'Registration is not currently open for this event.' } };
+    if (targetEvent.status !== 'PUBLISHED' && targetEvent.status !== 'APPROVED') {
+      return { success: false, error: { code: 'EVENT_NOT_OPEN', message: 'Registration is only open for officially approved DHSGSU events.' } };
     }
 
-    const now = new Date();
+    const now = new Date('2026-09-30T10:00:00Z');
     const deadline = new Date(targetEvent.registrationDeadline);
     if (now > deadline) {
       return { success: false, error: { code: 'REGISTRATION_CLOSED', message: 'The registration deadline for this event has passed.' } };
@@ -207,7 +473,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const codeCategory = targetEvent.category.slice(0, 3).toUpperCase();
     const cleanRoll = (currentUser.rollNumber || 'STU').replace(/[^a-zA-Z0-9]/g, '');
     const randomSalt = Math.floor(1000 + Math.random() * 9000);
-    const qrToken = `CP-PASS-${codeCategory}-${cleanRoll}-${randomSalt}`;
+    const qrToken = `PARISAR-PASS-${codeCategory}-${cleanRoll}-${randomSalt}`;
 
     const newRegistration: Registration = {
       _id: `reg-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -238,7 +504,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       eventId: targetEvent._id,
       type: 'REGISTRATION_CONFIRMED',
       title: `Registration Confirmed: ${targetEvent.title}`,
-      message: `Your verified digital pass has been generated. View your pass in 'My Passes' to check in at ${targetEvent.venue}.`,
+      message: `Your verified digital pass has been generated. View your pass in 'My Pass' to check in at ${targetEvent.venue}.`,
       read: false,
       createdAt: new Date().toISOString(),
     };
@@ -318,9 +584,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     const candidates = events.filter(e => 
-      e.status === 'PUBLISHED' && 
-      !registeredIds.has(e._id) &&
-      new Date(e.registrationDeadline) >= new Date()
+      (e.status === 'PUBLISHED' || e.status === 'APPROVED') && 
+      !registeredIds.has(e._id)
     );
 
     // Score based on category match + tag matches
@@ -399,7 +664,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       organizerName: currentUser.name,
       organizerEmail: currentUser.email,
       registrationCount: 0,
-      status: asDraft ? 'DRAFT' : 'PUBLISHED',
+      status: asDraft ? 'DRAFT' : (eventData.status || 'PENDING_REVIEW'),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -566,7 +831,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const nowIso = new Date().toISOString();
     const newCerts: Certificate[] = eligibleAttendees.map(att => {
-      const code = `CP-CERT-${new Date().getFullYear()}-${event._id.toUpperCase()}-${att.userRollNumber.replace(/[^a-zA-Z0-9]/g, '')}`;
+      const code = `DHSGSU-CERT-${new Date().getFullYear()}-${event._id.toUpperCase()}-${att.userRollNumber.replace(/[^a-zA-Z0-9]/g, '')}`;
       return {
         _id: `cert-${Date.now()}-${att.userId}`,
         eventId: event._id,
@@ -575,11 +840,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userName: att.userName,
         userRollNumber: att.userRollNumber,
         department: att.userDepartment,
-        certificateUrl: `https://campus.edu/verify/cert/${code}`,
+        certificateUrl: `/certificates/${code}.pdf`,
         verificationCode: code,
         issuedAt: nowIso,
         certificateType: 'PARTICIPATION',
-        issueAuthorizedBy: `${currentUser.name} & Dean Arthur Vance`,
+        issueAuthorizedBy: `${currentUser.name} & Prof. S.P. Gautam (DSW)`,
       };
     });
 
@@ -624,6 +889,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated: User = {
       ...target,
       role: newRole,
+      organizerStatus: newRole === 'organizer' || newRole === 'admin' ? 'VERIFIED' : 'NONE',
       updatedAt: new Date().toISOString(),
     };
 
@@ -649,7 +915,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (u._id === req.userId || u.email === req.email) {
         return {
           ...u,
-          role: approve ? 'organizer' : u.role,
+          role: 'organizer',
           organizerStatus: approve ? 'VERIFIED' : 'REJECTED',
           updatedAt: new Date().toISOString()
         };
@@ -664,7 +930,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider
       value={{
         currentUser,
+        isAuthenticated,
         setCurrentUserId,
+        loginWithCredentials,
+        registerStudentAccount,
+        registerOrganizerAccount,
+        resubmitOrganizerVerification,
+        updateUserProfile,
+        logout,
         allUsers,
         events,
         venues,

@@ -41,7 +41,12 @@ export const Badge: React.FC<BadgeProps> = ({
 export const EventStatusBadge: React.FC<{ status: EventStatus }> = ({ status }) => {
   switch (status) {
     case 'PUBLISHED':
-      return <Badge variant="success">Open for Registration</Badge>;
+    case 'APPROVED':
+      return <Badge variant="success">Approved & Open</Badge>;
+    case 'PENDING_REVIEW':
+      return <Badge variant="brass">Pending Review</Badge>;
+    case 'REJECTED':
+      return <Badge variant="error">Rejected</Badge>;
     case 'ONGOING':
       return <Badge variant="info">Ongoing Today</Badge>;
     case 'COMPLETED':
