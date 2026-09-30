@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build-and-release:
-    name: Compile & Replace Latest Android Release APK
+    name: Compile & Publish Latest Android Release APK
     runs-on: ubuntu-latest
 
     steps:
@@ -62,21 +62,23 @@ jobs:
           path: parisar-v2.0.0-release.apk
           if-no-files-found: error
 
-      - name: Update v2.0.0 Release In-Place & Clean Older Tags
+      - name: Replace All Previous Releases with Fresh Timestamped v2.0.0 Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Removing any outdated releases older than v2.0.0..."
+          echo "Deleting all previous releases and tags so the new release has the current timestamp..."
           for tag in $(gh release list --json tagName -q '.[].tagName'); do
-            if [ "$tag" != "v2.0.0" ]; then
-              echo "Deleting outdated release: $tag"
-              gh release delete "$tag" --cleanup-tag --yes || true
-            fi
+            echo "Deleting release and tag: $tag"
+            gh release delete "$tag" --cleanup-tag --yes || true
           done
 
-          echo "Uploading latest signed APK to GitHub Release v2.0.0..."
-          gh release upload v2.0.0 parisar-release.apk parisar-v2.0.0-release.apk --clobber || \
-          gh release create v2.0.0 parisar-release.apk parisar-v2.0.0-release.apk \
-            --title "PARISAR Android App v2.0.0 (Latest Official Release — DHSGSU)" \
-            --notes "Official compiled and signed Android release (v2.0.0) for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.). Includes Role-Based Authentication (Student, Verified Organizer, University Administrator), Organizer Verification Workflow, Event Moderation, and QR Turnstile Attendance." \
+          echo "Publishing fresh v2.0.0 release..."
+          gh release create v2.0.0 parisar-v2.0.0-release.apk parisar-release.apk \
+            --title "PARISAR Android App v2.0.0 (Official Release — DHSGSU)" \
+            --notes "### PARISAR Official Android Client (v2.0.0) — Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.)
+
+- **Direct APK Download**: Click **\`parisar-v2.0.0-release.apk\`** (4.6 MB) below to install directly on Android 8.0+.
+- **Role-Based Architecture**: Dedicated authentication & panels for **Students**, **Verified Organizers**, and **University Administrators (DSW)**.
+- **Organizer Verification & Event Moderation**: Mandatory DSW approval workflow for new organizer accounts and submitted campus event proposals.
+- **Digital Event Passes & QR Turnstile Scanner**: Cryptographic student event passes and real-time optical attendance verification." \
             --latest
