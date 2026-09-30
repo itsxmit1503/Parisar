@@ -18,13 +18,11 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import androidx.activity.OnBackPressedCallback;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String DEFAULT_URL = "https://parisar-eight.vercel.app";
     private WebView webView;
-    private SwipeRefreshLayout swipeRefresh;
     private ProgressBar progressBar;
     private LinearLayout offlineContainer;
     private Button btnRetry;
@@ -36,26 +34,15 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         webView = findViewById(R.id.webView);
-        swipeRefresh = findViewById(R.id.swipeRefresh);
         progressBar = findViewById(R.id.progressBar);
         offlineContainer = findViewById(R.id.offlineContainer);
         btnRetry = findViewById(R.id.btnRetry);
 
-        configureWebView();
-
-        swipeRefresh.setOnRefreshListener(() -> {
-            if (isNetworkAvailable()) {
-                webView.clearCache(true);
-                webView.reload();
-            } else {
-                swipeRefresh.setRefreshing(false);
-                showOffline();
-            }
-        });
+        configureNativeWebView();
 
         btnRetry.setOnClickListener(v -> loadPortal());
 
-        // Handle modern Back button
+        // Handle hardware Back button naturally
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
@@ -72,7 +59,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private void configureWebView() {
+    private void configureNativeWebView() {
+        // Disable browser-like overscroll and scrollbars
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        webView.setVerticalScrollBarEnabled(false);
+        webView.setHorizontalScrollBarEnabled(false);
+        webView.setLongClickable(false);
+        webView.setOnLongClickListener(v -> true);
+
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -82,8 +76,9 @@ public class MainActivity extends AppCompatActivity {
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
         settings.setSupportZoom(false);
+        settings.setTextZoom(100);
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setUserAgentString(settings.getUserAgentString() + " PARISAR_Android/2.0.0_DHSGSU");
+        settings.setUserAgentString(settings.getUserAgentString() + " PARISAR_Android/2.1.0_Native");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -92,7 +87,6 @@ public class MainActivity extends AppCompatActivity {
                     progressBar.setVisibility(View.VISIBLE);
                 } else {
                     progressBar.setVisibility(View.GONE);
-                    swipeRefresh.setRefreshing(false);
                 }
             }
         });
@@ -123,13 +117,11 @@ public class MainActivity extends AppCompatActivity {
 
     private void showOffline() {
         webView.setVisibility(View.GONE);
-        swipeRefresh.setVisibility(View.GONE);
         offlineContainer.setVisibility(View.VISIBLE);
     }
 
     private void showOnline() {
         webView.setVisibility(View.VISIBLE);
-        swipeRefresh.setVisibility(View.VISIBLE);
         offlineContainer.setVisibility(View.GONE);
     }
 

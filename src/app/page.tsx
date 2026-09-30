@@ -262,7 +262,7 @@ export function MainApp({ initialTab = 'landing' }: MainAppProps) {
       )}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-6 sm:pt-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-5 sm:pt-8 pb-24 lg:pb-12">
         {/* LANDING PAGE */}
         {effectiveTab === 'landing' && (
           <LandingPage

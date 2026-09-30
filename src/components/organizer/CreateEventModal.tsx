@@ -6,7 +6,7 @@ import { EventCategory, CampusEvent } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { useToast } from '../ui/Toast';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface CreateEventModalProps {
   isOpen: boolean;
@@ -49,10 +49,11 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [tagsInput, setTagsInput] = useState('DHSGSU, Workshop, Academic');
   const [eligibility, setEligibility] = useState('Open to all enrolled students of DHSGSU');
   const [specialInstructions, setSpecialInstructions] = useState('Bring your university ID card and relevant course materials.');
-  const [coverImage, setCoverImage] = useState(
+  const [coverImage] = useState(
     'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80'
   );
 
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -125,11 +126,11 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Create University Event Proposal"
-      subtitle="Draft an event or submit directly to the University Administrator for official campus publication"
+      title="Create Campus Event"
+      subtitle="Submit a new event proposal to the University Administrator for campus publication"
       maxWidth="2xl"
       footer={
-        <div className="flex items-center justify-between w-full">
+        <div className="flex flex-wrap items-center justify-between gap-2 w-full">
           <Button
             variant="ghost"
             size="sm"
@@ -152,23 +153,23 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               isLoading={isSubmitting}
               onClick={() => handleSubmit(false)}
             >
-              Submit for Admin Review
+              Submit for Review
             </Button>
           </div>
         </div>
       }
     >
-      <div className="space-y-4 text-xs text-[#18212B]">
+      <div className="space-y-4 text-sm text-[#18212B]">
         {errorMsg && (
-          <div className="p-3 bg-[#FBEAEA] border-l-4 border-l-[#A83226] border border-[#A83226]/30 rounded-[2px] text-[#A83226] flex items-start gap-2">
+          <div className="p-3.5 bg-[#FBEAEA] border-l-4 border-l-[#A83226] border border-[#A83226]/30 rounded-[3px] text-[#A83226] flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-            <div className="font-bold">{errorMsg}</div>
+            <div className="font-bold text-xs">{errorMsg}</div>
           </div>
         )}
 
-        {/* Title */}
+        {/* Essential Field 1: Event Title */}
         <div>
-          <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">
+          <label className="font-bold text-xs text-[#18212B] block mb-1.5">
             Event Title *
           </label>
           <input
@@ -176,18 +177,18 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
             placeholder="e.g. Next-Generation Cloud Systems Seminar"
             value={title}
             onChange={e => setTitle(e.target.value)}
-            className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
+            className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B]"
           />
         </div>
 
-        {/* Category & Venue */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {/* Essential Field 2: Category & Campus Venue */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
           <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">Category *</label>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">Category *</label>
             <select
               value={category}
               onChange={e => setCategory(e.target.value as EventCategory)}
-              className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
+              className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B]"
             >
               {CATEGORIES.map(c => (
                 <option key={c} value={c}>
@@ -198,133 +199,149 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           </div>
 
           <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">Campus Venue *</label>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">Campus Venue *</label>
             <select
               value={venueId}
               onChange={e => setVenueId(e.target.value)}
-              className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
+              className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B]"
             >
               {venues.map(v => (
                 <option key={v.id} value={v.id}>
-                  {v.name} ({v.building})
+                  {v.name}
                 </option>
               ))}
             </select>
           </div>
         </div>
 
-        {/* Schedule Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Essential Field 3: Date & Time */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">Event Date</label>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">Event Date *</label>
             <input
               type="date"
               value={date}
               onChange={e => setDate(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-mono text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
+              className="w-full min-h-[46px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-mono text-[#18212B] focus:outline-none focus:border-[#18212B]"
             />
           </div>
 
           <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">Start Time</label>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">Start Time *</label>
             <input
               type="time"
               value={startTime}
               onChange={e => setStartTime(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-mono text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
+              className="w-full min-h-[46px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-mono text-[#18212B] focus:outline-none focus:border-[#18212B]"
             />
           </div>
 
           <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">End Time</label>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">End Time *</label>
             <input
               type="time"
               value={endTime}
               onChange={e => setEndTime(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-mono text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
+              className="w-full min-h-[46px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-mono text-[#18212B] focus:outline-none focus:border-[#18212B]"
             />
           </div>
         </div>
 
-        {/* Capacity & Deadline */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">
-              Participant Capacity (Atomic limit) *
-            </label>
-            <input
-              type="number"
-              min="1"
-              value={capacity}
-              onChange={e => setCapacity(e.target.value)}
-              className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-mono font-bold text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
-            />
-          </div>
-
-          <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">
-              Registration Deadline Date
-            </label>
-            <input
-              type="date"
-              value={deadlineDate}
-              onChange={e => setDeadlineDate(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-mono text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
-            />
-          </div>
-        </div>
-
-        {/* Description */}
+        {/* Essential Field 4: Seat Capacity */}
         <div>
-          <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">Description</label>
-          <textarea
-            rows={3}
-            placeholder="Comprehensive agenda, curriculum, or rules..."
-            value={description}
-            onChange={e => setDescription(e.target.value)}
-            className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
-          />
-        </div>
-
-        {/* Tags & Eligibility */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">
-              Tags (comma separated)
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. AI, Python, Career"
-              value={tagsInput}
-              onChange={e => setTagsInput(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
-            />
-          </div>
-
-          <div>
-            <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">Eligibility</label>
-            <input
-              type="text"
-              placeholder="e.g. 2nd & 3rd year engineering"
-              value={eligibility}
-              onChange={e => setEligibility(e.target.value)}
-              className="w-full px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
-            />
-          </div>
-        </div>
-
-        {/* Special Instructions */}
-        <div>
-          <label className="font-bold uppercase tracking-wider text-[10px] text-[#18212B] block mb-1">
-            Special Instructions for Attendees
+          <label className="font-bold text-xs text-[#18212B] block mb-1.5">
+            Participant Capacity (Seats) *
           </label>
           <input
-            type="text"
-            placeholder="e.g. Bring laptops, check in 15 mins prior"
-            value={specialInstructions}
-            onChange={e => setSpecialInstructions(e.target.value)}
-            className="w-full px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs text-[#18212B] focus:outline-none focus:border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)]"
+            type="number"
+            min="1"
+            value={capacity}
+            onChange={e => setCapacity(e.target.value)}
+            className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-mono font-bold text-[#18212B] focus:outline-none focus:border-[#18212B]"
           />
+        </div>
+
+        {/* Essential Field 5: Description */}
+        <div>
+          <label className="font-bold text-xs text-[#18212B] block mb-1.5">Event Description</label>
+          <textarea
+            rows={3}
+            placeholder="Summarize the event agenda, speakers, or rules..."
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            className="w-full px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm text-[#18212B] focus:outline-none focus:border-[#18212B]"
+          />
+        </div>
+
+        {/* Progressive Disclosure Toggle for Secondary Fields */}
+        <div className="pt-1 border-t border-[#EAE5DB]">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
+            className="w-full min-h-[44px] px-3.5 py-2.5 rounded-[3px] bg-[#EAE5DB]/70 border border-[#B9B4AA] flex items-center justify-between text-xs font-bold text-[#18212B] hover:bg-[#EAE5DB] transition-colors cursor-pointer touch-manipulation"
+          >
+            <span>Additional Event Details (Optional: Deadline, Eligibility, Instructions)</span>
+            {showAdvancedOptions ? (
+              <ChevronUp className="w-4 h-4 text-[#B6533C]" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-[#B6533C]" />
+            )}
+          </button>
+
+          {showAdvancedOptions && (
+            <div className="mt-3.5 space-y-3.5 p-3.5 bg-[#EAE5DB]/40 border border-[#B9B4AA] rounded-[3px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="font-bold text-xs text-[#18212B] block mb-1.5">
+                    Registration Deadline Date
+                  </label>
+                  <input
+                    type="date"
+                    value={deadlineDate}
+                    onChange={e => setDeadlineDate(e.target.value)}
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-xs font-mono text-[#18212B]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-xs text-[#18212B] block mb-1.5">
+                    Tags (comma separated)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. AI, Python, Career"
+                    value={tagsInput}
+                    onChange={e => setTagsInput(e.target.value)}
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-xs text-[#18212B]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-xs text-[#18212B] block mb-1.5">Eligibility</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Open to all enrolled students of DHSGSU"
+                  value={eligibility}
+                  onChange={e => setEligibility(e.target.value)}
+                  className="w-full min-h-[44px] px-3 py-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-xs text-[#18212B]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-xs text-[#18212B] block mb-1.5">
+                  Special Instructions for Attendees
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Bring university ID card"
+                  value={specialInstructions}
+                  onChange={e => setSpecialInstructions(e.target.value)}
+                  className="w-full min-h-[44px] px-3 py-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-xs text-[#18212B]"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Modal>
