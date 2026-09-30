@@ -1,6 +1,6 @@
 {
   "name": "parisar-api",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "PARISAR Official REST API Backend for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.)",
   "main": "index.js",
   "scripts": {

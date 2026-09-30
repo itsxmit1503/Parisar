@@ -1,5 +1,5 @@
 // ==============================================================================
-// PARISAR REST API Backend Server
+// PARISAR REST API Backend Server (v2.0 — Role-Based Auth & Approval Workflows)
 // Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar, Madhya Pradesh
 // ==============================================================================
 
@@ -11,6 +11,7 @@ const jwt = require('jsonwebtoken');
 
 const {
   USERS,
+  ORGANIZER_REQUESTS,
   VENUES,
   EVENTS,
   REGISTRATIONS,
@@ -26,13 +27,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'parisar_dhsgsu_jwt_secret_2026';
 // Middleware
 app.use(cors({
   origin: '*', // Allow Web portal & Mobile APK clients
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 
 // In-Memory Data Store (Initialized with authentic DHSGSU data)
 let dbUsers = [...USERS];
+let dbOrganizerRequests = [...ORGANIZER_REQUESTS];
 let dbVenues = [...VENUES];
 let dbEvents = [...EVENTS];
 let dbRegistrations = [...REGISTRATIONS];
@@ -63,12 +65,16 @@ app.get(['/', '/health'], (req, res) => {
   res.status(200).json({
     service: 'PARISAR REST API',
     institution: 'Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.)',
-    version: '1.0.0',
+    version: '2.0.0',
+    architecture: 'Role-Based Auth (Student / Verified Organizer / University Administrator)',
     status: 'ONLINE',
     timestamp: new Date().toISOString(),
     database: isMongoConnected ? 'MONGODB_ATLAS' : 'IN_MEMORY_DHSGSU_STORE',
     endpoints: {
-      auth: '/api/v1/auth/login',
+      login: '/api/v1/auth/login',
+      registerStudent: '/api/v1/auth/register-student',
+      registerOrganizer: '/api/v1/auth/register-organizer',
+      organizerRequests: '/api/v1/organizer-requests',
       events: '/api/v1/events',
       venues: '/api/v1/venues',
       registrations: '/api/v1/registrations',
@@ -81,32 +87,40 @@ app.get(['/', '/health'], (req, res) => {
 });
 
 // ------------------------------------------------------------------------------
-// Authentication Routes (/api/v1/auth)
+// Authentication & Account Creation Routes (/api/v1/auth)
 // ------------------------------------------------------------------------------
 app.post('/api/v1/auth/login', (req, res) => {
-  const { email, rollNumber, userId } = req.body;
-  
+  const { identifier, email, rollNumber, userId, adminOnly } = req.body;
+  const query = (identifier || email || rollNumber || '').trim().toLowerCase();
+
   let user = null;
-  if (email) {
-    user = dbUsers.find(u => u.email.toLowerCase() === email.toLowerCase());
-  } else if (rollNumber) {
-    user = dbUsers.find(u => u.rollNumber && u.rollNumber.toLowerCase() === rollNumber.toLowerCase());
+  if (query) {
+    user = dbUsers.find(
+      u =>
+        u.email.toLowerCase() === query ||
+        (u.rollNumber && u.rollNumber.toLowerCase() === query) ||
+        u._id.toLowerCase() === query
+    );
   } else if (userId) {
     user = dbUsers.find(u => u._id === userId);
-  } else {
-    // Default to Amit Sharma for seamless testing
-    user = dbUsers[0];
   }
 
   if (!user) {
     return res.status(404).json({
       success: false,
-      message: 'Student or faculty user not found in DHSGSU directory.'
+      message: 'No DHSGSU account found matching that Email or University ID.'
+    });
+  }
+
+  if (adminOnly && user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied. This portal is restricted to authorized University Administrators.'
     });
   }
 
   const token = jwt.sign(
-    { userId: user._id, role: user.role, email: user.email },
+    { userId: user._id, role: user.role, organizerStatus: user.organizerStatus, email: user.email },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -120,10 +134,170 @@ app.post('/api/v1/auth/login', (req, res) => {
   });
 });
 
+// Student Signup (Section 6: Student -> Student Panel)
+app.post('/api/v1/auth/register-student', (req, res) => {
+  const { name, rollNumber, email, department, semester, phone } = req.body;
+  if (!name || !rollNumber || !email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Full Name, University ID / Roll Number, and Email are required.'
+    });
+  }
+
+  const exists = dbUsers.find(
+    u =>
+      u.email.toLowerCase() === email.trim().toLowerCase() ||
+      (u.rollNumber && u.rollNumber.toLowerCase() === rollNumber.trim().toLowerCase())
+  );
+  if (exists) {
+    return res.status(409).json({
+      success: false,
+      message: 'An account with this Email or University Roll Number is already registered.'
+    });
+  }
+
+  const newUser = {
+    _id: `student-${Date.now()}`,
+    name: name.trim(),
+    email: email.trim().toLowerCase(),
+    rollNumber: rollNumber.trim().toUpperCase(),
+    department: department || 'Department of Computer Science & Applications (DCSA)',
+    semester: Number(semester) || 1,
+    role: 'student',
+    organizerStatus: 'NONE',
+    interests: ['Seminar', 'Workshop', 'Cultural', 'Coding'],
+    profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+    phone: phone || '+91 98260 00000',
+    createdAt: new Date().toISOString()
+  };
+
+  dbUsers.push(newUser);
+
+  const token = jwt.sign(
+    { userId: newUser._id, role: newUser.role, email: newUser.email },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  res.status(201).json({
+    success: true,
+    message: 'Student account created successfully.',
+    data: { token, user: newUser }
+  });
+});
+
+// Organizer Signup & Verification Request (Section 7: Organizer -> Pending University Verification)
+app.post('/api/v1/auth/register-organizer', (req, res) => {
+  const { name, universityId, email, department, designation, phone, reason, supportingInfo } = req.body;
+  if (!name || !universityId || !email || !reason) {
+    return res.status(400).json({
+      success: false,
+      message: 'Full Name, University ID, Email, and Reason for Organizing are required.'
+    });
+  }
+
+  const exists = dbUsers.find(
+    u =>
+      u.email.toLowerCase() === email.trim().toLowerCase() ||
+      (u.rollNumber && u.rollNumber.toLowerCase() === universityId.trim().toLowerCase())
+  );
+  if (exists) {
+    return res.status(409).json({
+      success: false,
+      message: 'An account with this Email or University ID already exists.'
+    });
+  }
+
+  const newUserId = `org-${Date.now()}`;
+  const newUser = {
+    _id: newUserId,
+    name: name.trim(),
+    email: email.trim().toLowerCase(),
+    rollNumber: universityId.trim().toUpperCase(),
+    department: department || 'Department of Computer Science & Applications (DCSA)',
+    designation: designation || 'Faculty / Society Coordinator',
+    role: 'organizer',
+    organizerStatus: 'PENDING',
+    organization: department || 'DHSGSU Department Body',
+    interests: ['Seminar', 'Workshop'],
+    profileImage: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80',
+    phone: phone || '+91 94251 00000',
+    createdAt: new Date().toISOString()
+  };
+
+  const newRequest = {
+    id: `req-${Date.now()}`,
+    userId: newUserId,
+    fullName: newUser.name,
+    universityId: newUser.rollNumber,
+    department: newUser.department,
+    designation: newUser.designation,
+    email: newUser.email,
+    phone: newUser.phone,
+    reason: reason.trim(),
+    supportingInfo: supportingInfo || 'Submitted via PARISAR Organizer Registration',
+    status: 'PENDING',
+    submittedAt: new Date().toISOString()
+  };
+
+  dbUsers.push(newUser);
+  dbOrganizerRequests.unshift(newRequest);
+
+  const token = jwt.sign(
+    { userId: newUser._id, role: newUser.role, organizerStatus: newUser.organizerStatus, email: newUser.email },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+
+  res.status(201).json({
+    success: true,
+    message: 'Organizer verification request submitted. Organizer access will be activated after University Administrator approval.',
+    data: { token, user: newUser, request: newRequest }
+  });
+});
+
 app.get('/api/v1/auth/users', (req, res) => {
   res.status(200).json({
     success: true,
     data: dbUsers
+  });
+});
+
+// ------------------------------------------------------------------------------
+// Organizer Verification Requests Routes (/api/v1/organizer-requests)
+// ------------------------------------------------------------------------------
+app.get('/api/v1/organizer-requests', (req, res) => {
+  res.status(200).json({
+    success: true,
+    count: dbOrganizerRequests.length,
+    data: dbOrganizerRequests
+  });
+});
+
+app.post('/api/v1/organizer-requests/:id/review', (req, res) => {
+  const { decision, remarks } = req.body; // decision: 'APPROVED' | 'REJECTED'
+  const reqItem = dbOrganizerRequests.find(r => r.id === req.params.id);
+
+  if (!reqItem) {
+    return res.status(404).json({ success: false, message: 'Verification request not found.' });
+  }
+
+  reqItem.status = decision === 'APPROVED' ? 'APPROVED' : 'REJECTED';
+  reqItem.reviewedAt = new Date().toISOString();
+  reqItem.reviewedBy = 'Prof. S.P. Gautam (DSW)';
+  reqItem.remarks = remarks || (decision === 'APPROVED' ? 'Verified by University Administration.' : 'Verification declined.');
+
+  // Update corresponding user's organizerStatus
+  const user = dbUsers.find(u => u._id === reqItem.userId || u.email === reqItem.email);
+  if (user) {
+    user.role = 'organizer';
+    user.organizerStatus = decision === 'APPROVED' ? 'VERIFIED' : 'REJECTED';
+  }
+
+  res.status(200).json({
+    success: true,
+    message: `Organizer request ${reqItem.status.toLowerCase()}.`,
+    data: { request: reqItem, user }
   });
 });
 
@@ -138,16 +312,19 @@ app.get('/api/v1/venues', (req, res) => {
 });
 
 // ------------------------------------------------------------------------------
-// Events Routes (/api/v1/events)
+// Events & Event Approval Workflow Routes (/api/v1/events)
 // ------------------------------------------------------------------------------
 app.get('/api/v1/events', (req, res) => {
-  const { category, status, search, venueId } = req.query;
+  const { category, status, search, venueId, publicOnly } = req.query;
   
   let results = [...dbEvents];
   
-  if (status && status !== 'ALL') {
+  if (publicOnly === 'true') {
+    results = results.filter(e => e.status === 'PUBLISHED' || e.status === 'APPROVED');
+  } else if (status && status !== 'ALL') {
     results = results.filter(e => e.status === status);
   }
+
   if (category && category !== 'ALL') {
     results = results.filter(e => e.category.toLowerCase() === category.toLowerCase());
   }
@@ -180,6 +357,9 @@ app.get('/api/v1/events/:id', (req, res) => {
 });
 
 app.post('/api/v1/events', (req, res) => {
+  // Submitted events default to PENDING_REVIEW until approved by University Administrator
+  const requestedStatus = req.body.status === 'DRAFT' ? 'DRAFT' : 'PENDING_REVIEW';
+
   const newEvent = {
     _id: `evt-${Date.now()}`,
     title: req.body.title || 'Untitled University Event',
@@ -197,7 +377,7 @@ app.post('/api/v1/events', (req, res) => {
     registrationDeadline: req.body.registrationDeadline || new Date(Date.now() + 86400000).toISOString(),
     tags: req.body.tags || ['DHSGSU', 'Campus'],
     coverImage: req.body.coverImage || 'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80',
-    status: req.body.status || 'PUBLISHED',
+    status: requestedStatus,
     eligibility: req.body.eligibility || 'Open to all enrolled students of DHSGSU',
     specialInstructions: req.body.specialInstructions || 'Bring university ID card.',
     departmentScope: req.body.departmentScope || 'University Campus',
@@ -206,7 +386,31 @@ app.post('/api/v1/events', (req, res) => {
   };
 
   dbEvents.unshift(newEvent);
-  res.status(201).json({ success: true, data: newEvent });
+  res.status(201).json({
+    success: true,
+    message: requestedStatus === 'DRAFT'
+      ? 'Event saved as draft.'
+      : 'Event submitted for University Administrator review.',
+    data: newEvent
+  });
+});
+
+// Admin Event Moderation (Approve -> PUBLISHED, Reject -> REJECTED)
+app.put('/api/v1/events/:id/status', (req, res) => {
+  const { status } = req.body;
+  const event = dbEvents.find(e => e._id === req.params.id);
+  if (!event) {
+    return res.status(404).json({ success: false, message: 'Event not found' });
+  }
+
+  event.status = status === 'APPROVED' ? 'PUBLISHED' : status;
+  event.updatedAt = new Date().toISOString();
+
+  res.status(200).json({
+    success: true,
+    message: `Event status updated to ${event.status}.`,
+    data: event
+  });
 });
 
 // ------------------------------------------------------------------------------
@@ -217,6 +421,13 @@ app.post('/api/v1/registrations', (req, res) => {
   
   const event = dbEvents.find(e => e._id === eventId);
   if (!event) return res.status(404).json({ success: false, message: 'Event not found' });
+
+  if (event.status !== 'PUBLISHED' && event.status !== 'APPROVED') {
+    return res.status(400).json({
+      success: false,
+      message: 'Registrations are only open for approved and published university events.'
+    });
+  }
   
   const user = dbUsers.find(u => u._id === (userId || 'student-1')) || dbUsers[0];
   
@@ -298,7 +509,7 @@ app.post('/api/v1/attendance/verify', (req, res) => {
   if (!matchedReg) {
     return res.status(200).json({
       status: 'INVALID',
-      message: 'Unrecognized or counterfeit QR pass. Token does not exist in university records.'
+      message: 'Registration Not Found: Unrecognized or counterfeit QR pass token.'
     });
   }
 
@@ -361,6 +572,14 @@ app.post('/api/v1/attendance/verify', (req, res) => {
   });
 });
 
+app.get('/api/v1/attendance', (req, res) => {
+  res.status(200).json({
+    success: true,
+    count: dbAttendance.length,
+    data: dbAttendance
+  });
+});
+
 app.get('/api/v1/attendance/:eventId', (req, res) => {
   const records = dbAttendance.filter(a => a.eventId === req.params.eventId);
   res.status(200).json({
@@ -375,7 +594,6 @@ app.get('/api/v1/attendance/:eventId', (req, res) => {
 // ------------------------------------------------------------------------------
 app.post('/api/v1/announcements', (req, res) => {
   const { eventId, title, message } = req.body;
-  const event = dbEvents.find(e => e._id === eventId);
   const attendees = dbRegistrations.filter(r => r.eventId === eventId && r.status === 'CONFIRMED');
 
   attendees.forEach(att => {
@@ -442,7 +660,7 @@ app.get('/api/v1/passport', (req, res) => {
 // Start Server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`====================================================`);
-  console.log(`PARISAR REST API Server running on port ${PORT}`);
+  console.log(`PARISAR REST API Server v2.0 running on port ${PORT}`);
   console.log(`URL: http://localhost:${PORT}`);
   console.log(`Health Check: http://localhost:${PORT}/health`);
   console.log(`Institution: Dr. Harisingh Gour Vishwavidyalaya (DHSGSU)`);

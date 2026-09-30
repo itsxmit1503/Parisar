@@ -1,6 +1,6 @@
 // ==============================================================================
 // PARISAR • Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.)
-// Authentic Seed Data & Domain Models
+// Authentic Seed Data & Domain Models (Role-Based Architecture v2.0)
 // ==============================================================================
 
 const USERS = [
@@ -9,9 +9,10 @@ const USERS = [
     name: 'Amit Sharma',
     email: 'amit.sharma@dhsgsu.edu.in',
     rollNumber: 'Y23141042',
-    department: 'Department of Computer Science & Applications',
+    department: 'Department of Computer Science & Applications (DCSA)',
     semester: 6,
     role: 'student',
+    organizerStatus: 'NONE',
     interests: ['Technology', 'Coding', 'Entrepreneurship', 'Workshop'],
     profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
     phone: '+91 98260 12345',
@@ -23,8 +24,11 @@ const USERS = [
     email: 'priya.patel@dhsgsu.edu.in',
     rollNumber: 'Y23122018',
     department: 'Department of Electronics & Communication',
+    designation: 'IEEE Student Branch Coordinator (Sem 4)',
     semester: 4,
-    role: 'student',
+    role: 'organizer',
+    organizerStatus: 'PENDING',
+    organization: 'DHSGSU Electronics & Robotics Society',
     interests: ['Cultural', 'Seminar', 'Workshop'],
     profileImage: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=250&q=80',
     phone: '+91 98260 54321',
@@ -35,9 +39,12 @@ const USERS = [
     name: 'Rohan Mehra',
     email: 'rohan.mehra@dhsgsu.edu.in',
     rollNumber: 'Y23141088',
-    department: 'Department of Computer Science & Applications',
+    department: 'Department of Computer Science & Applications (DCSA)',
+    designation: 'Student Volunteer (Sem 6)',
     semester: 6,
-    role: 'student',
+    role: 'organizer',
+    organizerStatus: 'REJECTED',
+    organization: 'Informal Gaming & E-Sports Group',
     interests: ['Coding', 'Sports', 'Technology'],
     profileImage: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=250&q=80',
     phone: '+91 98260 99887',
@@ -47,10 +54,13 @@ const USERS = [
     _id: 'org-1',
     name: 'Dr. Alok Sahay',
     email: 'alok.sahay@dhsgsu.edu.in',
-    department: 'Department of Computer Science & Applications',
+    rollNumber: 'EMP-DCSA-104',
+    department: 'Department of Computer Science & Applications (DCSA)',
     designation: 'Associate Professor & Faculty Convener',
     role: 'organizer',
+    organizerStatus: 'VERIFIED',
     organization: 'DHSGSU Centre for Advanced Computing & Technology Forum',
+    interests: ['Workshop', 'Seminar', 'Coding', 'Technology'],
     profileImage: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80',
     phone: '+91 94251 11223',
     createdAt: '2024-06-15T08:00:00Z',
@@ -59,13 +69,67 @@ const USERS = [
     _id: 'admin-1',
     name: 'Prof. S.P. Gautam',
     email: 'dsw@dhsgsu.edu.in',
+    rollNumber: 'ADMIN-DSW-001',
     department: "Office of the Dean of Students' Welfare (DSW)",
-    designation: "Dean of Students' Welfare",
+    designation: "Dean of Students' Welfare & University Administrator",
     role: 'admin',
+    organizerStatus: 'VERIFIED',
     organization: 'Dr. Harisingh Gour Vishwavidyalaya Administration',
+    interests: ['Seminar', 'Cultural', 'Academic'],
     profileImage: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=250&q=80',
     phone: '+91 94251 99001',
     createdAt: '2023-01-10T09:00:00Z',
+  }
+];
+
+const ORGANIZER_REQUESTS = [
+  {
+    id: 'req-01',
+    userId: 'student-2',
+    fullName: 'Priya Patel',
+    universityId: 'Y23122018',
+    department: 'Department of Electronics & Communication',
+    designation: 'IEEE Student Branch Coordinator (Semester 4)',
+    email: 'priya.patel@dhsgsu.edu.in',
+    phone: '+91 98260 54321',
+    reason: 'Requesting organizer access to coordinate the Embedded Systems & IoT Hands-on Workshop and departmental technical seminars approved by HoD, Dept. of Electronics.',
+    supportingInfo: 'Endorsed by Head of Department, Electronics & Communication (Ref: DHSGSU/EC/2026/114)',
+    status: 'PENDING',
+    submittedAt: '2026-09-28T11:20:00Z'
+  },
+  {
+    id: 'req-02',
+    userId: 'student-3',
+    fullName: 'Rohan Mehra',
+    universityId: 'Y23141088',
+    department: 'Department of Computer Science & Applications (DCSA)',
+    designation: 'Student Representative (Semester 6)',
+    email: 'rohan.mehra@dhsgsu.edu.in',
+    phone: '+91 98260 99887',
+    reason: 'Organizing an inter-hostel late-night gaming competition in DCSA Lab.',
+    supportingInfo: 'Self-nominated student group without faculty convener signature.',
+    status: 'REJECTED',
+    submittedAt: '2026-09-24T15:10:00Z',
+    reviewedAt: '2026-09-25T10:00:00Z',
+    reviewedBy: 'Prof. S.P. Gautam (DSW)',
+    remarks: 'Missing official faculty convener endorsement letter from Head of Department (DCSA). Please obtain faculty authorization and re-apply.'
+  },
+  {
+    id: 'req-03',
+    userId: 'org-1',
+    fullName: 'Dr. Alok Sahay',
+    universityId: 'EMP-DCSA-104',
+    department: 'Department of Computer Science & Applications (DCSA)',
+    designation: 'Associate Professor & Faculty Convener',
+    email: 'alok.sahay@dhsgsu.edu.in',
+    phone: '+91 94251 11223',
+    reason: 'Official faculty convener for DCSA national seminars, AI/ML technical workshops, and coding competitions.',
+    supportingInfo: 'Registrar Appointment Order #DHSGSU/ACAD/2024/89',
+    status: 'APPROVED',
+    submittedAt: '2024-06-15T08:00:00Z',
+    reviewedAt: '2024-06-16T09:30:00Z',
+    reviewedBy: 'Prof. S.P. Gautam (DSW)',
+    remarks: 'Verified faculty convener with full departmental event privileges.'
   }
 ];
 
@@ -248,6 +312,30 @@ const EVENTS = [
     departmentScope: 'DHSGSU Innovation & Incubation Centre (IIC)',
     createdAt: '2026-09-12T09:30:00Z',
     updatedAt: '2026-09-26T14:20:00Z',
+  },
+  {
+    _id: 'evt-5',
+    title: 'Cloud-Native Microservices & Kubernetes Bootcamp',
+    description: 'Proposed 1-day intensive lab session on container orchestration, Docker, and cloud deployment pipelines for final-year computer science students.',
+    category: 'Workshop',
+    organizerId: 'org-1',
+    organizerName: 'Dr. Alok Sahay',
+    organizerEmail: 'alok.sahay@dhsgsu.edu.in',
+    venue: 'Turing Advanced Computing Lab (DCSA)',
+    venueId: 'venue-dcsa-lab',
+    startTime: '2026-10-14T10:00:00Z',
+    endTime: '2026-10-14T16:00:00Z',
+    capacity: 60,
+    registrationCount: 0,
+    registrationDeadline: '2026-10-12T23:59:00Z',
+    tags: ['Docker', 'Kubernetes', 'Cloud', 'DCSA'],
+    coverImage: 'https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&w=800&q=80',
+    status: 'PENDING_REVIEW',
+    eligibility: 'MCA & B.Tech (CSE) Sem 5–8 students',
+    specialInstructions: 'Awaiting University Administrator approval before opening student registrations.',
+    departmentScope: 'Department of Computer Science & Applications',
+    createdAt: '2026-09-29T10:00:00Z',
+    updatedAt: '2026-09-29T10:00:00Z',
   }
 ];
 
@@ -362,6 +450,7 @@ const ACHIEVEMENTS = [
 
 module.exports = {
   USERS,
+  ORGANIZER_REQUESTS,
   VENUES,
   EVENTS,
   REGISTRATIONS,
