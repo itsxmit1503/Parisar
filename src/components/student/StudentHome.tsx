@@ -8,11 +8,9 @@ import {
   Calendar, 
   MapPin, 
   ArrowRight, 
-  Ticket, 
-  CheckCircle2
+  Ticket
 } from 'lucide-react';
 import { CategoryBadge } from '../ui/Badge';
-import { Button } from '../ui/Button';
 
 interface StudentHomeProps {
   onOpenEvent: (event: CampusEvent) => void;
@@ -30,6 +28,7 @@ export const StudentHome: React.FC<StudentHomeProps> = ({
 }) => {
   const { currentUser, events, registrations } = useApp();
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPill, setSelectedPill] = useState<'All' | 'Seminar' | 'Workshop' | 'Cultural' | 'Competition'>('All');
 
   // Only approved/published events are visible to students
   const publishedEvents = events.filter(
@@ -47,9 +46,18 @@ export const StudentHome: React.FC<StudentHomeProps> = ({
     ? publishedEvents.find(e => e._id === nextRegisteredReg.eventId) || events.find(e => e._id === nextRegisteredReg.eventId)
     : undefined;
 
-  // Filter upcoming events if user types in search box
+  // Filter upcoming events by search and compact category pill
   const displayedEvents = publishedEvents
     .filter(evt => {
+      if (selectedPill !== 'All') {
+        const catMatch =
+          evt.category === selectedPill ||
+          (selectedPill === 'Seminar' && evt.category === 'Seminars') ||
+          (selectedPill === 'Workshop' && evt.category === 'Workshops') ||
+          (selectedPill === 'Competition' && evt.category === 'Competitions');
+        if (!catMatch) return false;
+      }
+
       if (!searchQuery.trim()) return true;
       const q = searchQuery.toLowerCase();
       return (
@@ -62,134 +70,126 @@ export const StudentHome: React.FC<StudentHomeProps> = ({
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-24 lg:pb-16">
-      {/* 1. Clear Purpose Header & Search (Sections 4, 5, 12) */}
+      {/* 1. Greeting + Supporting Text + ONE Primary Search Field */}
       <section className="space-y-4 pt-1">
         <div className="space-y-1">
           <div className="text-xs font-mono font-bold uppercase tracking-widest text-[#B6533C]">
-            PARISAR • DHSGSU
+            PARISAR · DHSGSU
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
-            Hello, {currentUser.name.split(' ')[0]}
+            Good morning, {currentUser.name.split(' ')[0]}
           </h1>
-          <p className="text-sm text-[#62605B]">
-            Find and register for upcoming seminars, workshops, cultural events, and competitions across campus.
+          <p className="text-sm sm:text-base text-[#62605B]">
+            Find something happening on campus.
           </p>
         </div>
 
-        {/* Comfortable Touch Search Bar */}
-        <div className="bg-[#EAE5DB] border border-[#B9B4AA] p-2.5 rounded-[4px] shadow-[inset_0_1px_3px_rgba(24,33,43,0.08)] flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#62605B]" />
+        {/* Single Clean Search Input */}
+        <div className="space-y-2.5">
+          <div className="relative">
+            <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#62605B]" />
             <input
               type="text"
-              placeholder="Search by event name, category, or venue..."
+              placeholder="Search events..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !searchQuery.trim()) onNavigateToEvents();
-              }}
-              className="w-full min-h-[46px] pl-10 pr-4 py-2.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-sm font-medium text-[#18212B] placeholder-[#62605B] focus:outline-none focus:border-[#18212B] transition-all"
+              className="w-full min-h-[48px] pl-11 pr-4 py-3 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] text-sm sm:text-base font-medium text-[#18212B] placeholder-[#62605B] shadow-[2px_2px_0_0_#18212B] focus:outline-none focus:border-[#18212B] transition-all"
             />
           </div>
-          <Button
-            variant="primary"
-            size="md"
-            onClick={onNavigateToEvents}
-            rightIcon={<ArrowRight className="w-4 h-4" />}
-          >
-            Browse All Events
-          </Button>
+
+          {/* Optional Compact Category Filters */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {(['All', 'Seminar', 'Workshop', 'Cultural', 'Competition'] as const).map(pill => (
+              <button
+                key={pill}
+                onClick={() => setSelectedPill(pill)}
+                className={`min-h-[38px] px-3.5 py-1.5 rounded-[3px] text-xs font-bold border transition-all whitespace-nowrap cursor-pointer touch-manipulation ${
+                  selectedPill === pill
+                    ? 'bg-[#18212B] text-[#FCFAF5] border-[#18212B]'
+                    : 'bg-[#EAE5DB]/70 text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
+                }`}
+              >
+                {pill}
+              </button>
+            ))}
+          </div>
         </div>
       </section>
 
-      {/* 2. My Next Registered Event & My Pass (Prioritized in Section 4) */}
+      {/* 2. YOUR NEXT EVENT (Compact card when student has a registered upcoming event) */}
       {nextRegisteredReg && nextRegisteredEvent && (
-        <section className="space-y-2.5">
-          <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-[#18212B]">
-            My Next Registered Event
-          </h2>
+        <section className="space-y-2">
+          <div className="text-xs font-mono font-bold uppercase tracking-widest text-[#62605B]">
+            YOUR NEXT EVENT
+          </div>
 
-          <div className="bg-[#FCFAF5] border-2 border-[#18212B] shadow-[3px_3px_0_0_#18212B] rounded-[4px] p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <CategoryBadge category={nextRegisteredEvent.category} />
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[2px] bg-[#EBF3ED] text-[#2F613B] border border-[#2F613B]/30 text-xs font-bold">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Registered • Pass Ready
-                </span>
-              </div>
-
-              <h3 className="text-lg font-extrabold text-[#18212B] leading-snug">
+          <div
+            onClick={() => onOpenPass(nextRegisteredReg, nextRegisteredEvent)}
+            className="bg-[#FCFAF5] border-2 border-[#18212B] shadow-[3px_3px_0_0_#18212B] rounded-[4px] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer active:translate-y-[1px] transition-all"
+          >
+            <div className="space-y-1">
+              <h3 className="text-base sm:text-lg font-extrabold text-[#18212B] leading-snug">
                 {nextRegisteredEvent.title}
               </h3>
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs sm:text-sm text-[#62605B]">
-                <span className="flex items-center gap-1.5 font-medium text-[#18212B]">
-                  <Calendar className="w-4 h-4 text-[#B6533C]" />
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs sm:text-sm text-[#62605B]">
+                <span className="font-medium text-[#18212B]">
                   {new Date(nextRegisteredEvent.startTime).toLocaleDateString([], {
+                    weekday: 'short',
                     month: 'short',
                     day: 'numeric',
-                  })} • {new Date(nextRegisteredEvent.startTime).toLocaleTimeString([], {
+                  })} · {new Date(nextRegisteredEvent.startTime).toLocaleTimeString([], {
                     hour: 'numeric',
                     minute: '2-digit',
                   })}
                 </span>
-                <span className="flex items-center gap-1.5">
-                  <MapPin className="w-4 h-4 text-[#64788A]" />
-                  {nextRegisteredEvent.venue}
-                </span>
+                <span>·</span>
+                <span>{nextRegisteredEvent.venue}</span>
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={() => onOpenEvent(nextRegisteredEvent)}
-              >
-                View Details
-              </Button>
-              <Button
-                variant="primary"
-                size="md"
-                leftIcon={<Ticket className="w-4 h-4" />}
-                onClick={() => onOpenPass(nextRegisteredReg, nextRegisteredEvent)}
-              >
-                My Pass
-              </Button>
-            </div>
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                onOpenPass(nextRegisteredReg, nextRegisteredEvent);
+              }}
+              className="self-start sm:self-center min-h-[42px] px-4 py-2 rounded-[3px] bg-[#B6533C] text-white border border-[#18212B] shadow-[2px_2px_0_0_#18212B] text-xs sm:text-sm font-bold flex items-center gap-2 cursor-pointer touch-manipulation shrink-0"
+            >
+              <Ticket className="w-4 h-4" />
+              <span>View Pass →</span>
+            </button>
           </div>
         </section>
       )}
 
-      {/* 3. Upcoming Campus Events — Scannable in 1–2 Seconds (Section 7) */}
+      {/* 3. UPCOMING EVENTS */}
       <section className="space-y-4">
-        <div className="flex items-center justify-between border-b border-[#B9B4AA] pb-3">
-          <div>
-            <h2 className="text-base sm:text-lg font-extrabold text-[#18212B]">
-              Upcoming Campus Events
-            </h2>
-            <p className="text-xs sm:text-sm text-[#62605B]">
-              Tap an event to view details or register for your digital pass.
-            </p>
-          </div>
-          <Button variant="outline" size="sm" onClick={onNavigateToEvents}>
-            See All ({publishedEvents.length})
-          </Button>
+        <div className="flex items-center justify-between border-b border-[#B9B4AA] pb-2.5">
+          <h2 className="text-lg sm:text-xl font-extrabold text-[#18212B]">
+            Upcoming Events
+          </h2>
+          <button
+            onClick={onNavigateToEvents}
+            className="min-h-[40px] px-3 py-1.5 text-sm font-bold text-[#B6533C] hover:text-[#18212B] flex items-center gap-1 cursor-pointer touch-manipulation"
+          >
+            <span>See all</span>
+            <ArrowRight className="w-4 h-4" />
+          </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {displayedEvents.map(evt => {
             const myReg = userConfirmedRegs.find(r => r.eventId === evt._id);
             const isFull = evt.registrationCount >= evt.capacity;
+            const isClosed = new Date() > new Date(evt.registrationDeadline);
 
             return (
               <div
                 key={evt._id}
                 onClick={() => onOpenEvent(evt)}
-                className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] overflow-hidden flex flex-col justify-between cursor-pointer active:translate-y-[1px] transition-all"
+                className="group bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] overflow-hidden flex flex-col justify-between cursor-pointer active:translate-y-[1px] transition-all"
               >
-                {/* 1. Event Image + Category + Registration Status */}
+                {/* Event Image + Category + Useful Status Badge */}
                 <div>
                   <div className="h-44 w-full bg-[#EAE5DB] relative border-b border-[#B9B4AA]">
                     <img
@@ -200,26 +200,28 @@ export const StudentHome: React.FC<StudentHomeProps> = ({
                     <div className="absolute top-3 left-3">
                       <CategoryBadge category={evt.category} />
                     </div>
-                    <div className="absolute top-3 right-3">
-                      {myReg ? (
-                        <span className="px-2.5 py-1 rounded-[2px] bg-[#2F613B] text-white text-[11px] font-bold shadow-sm">
-                          Registered
-                        </span>
-                      ) : isFull ? (
-                        <span className="px-2.5 py-1 rounded-[2px] bg-[#A83226] text-white text-[11px] font-bold shadow-sm">
-                          Full
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-[2px] bg-[#18212B]/90 text-[#FCFAF5] text-[11px] font-bold">
-                          Open
-                        </span>
-                      )}
-                    </div>
+                    {(myReg || isFull || isClosed) && (
+                      <div className="absolute top-3 right-3">
+                        {myReg ? (
+                          <span className="px-2.5 py-1 rounded-[2px] bg-[#2F613B] text-white text-[11px] font-bold shadow-sm">
+                            Registered
+                          </span>
+                        ) : isClosed ? (
+                          <span className="px-2.5 py-1 rounded-[2px] bg-[#18212B] text-white text-[11px] font-bold shadow-sm">
+                            Closed
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-[2px] bg-[#A83226] text-white text-[11px] font-bold shadow-sm">
+                            Full
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  {/* 2. Event Title, Date, Venue (No dense paragraphs) */}
+                  {/* Event Title, Date/Time, Venue */}
                   <div className="p-4 sm:p-5 space-y-2.5">
-                    <h3 className="font-extrabold text-base text-[#18212B] leading-snug line-clamp-2">
+                    <h3 className="font-extrabold text-base sm:text-lg text-[#18212B] group-hover:text-[#B6533C] leading-snug line-clamp-2 transition-colors">
                       {evt.title}
                     </h3>
 
@@ -231,7 +233,7 @@ export const StudentHome: React.FC<StudentHomeProps> = ({
                             weekday: 'short',
                             month: 'short',
                             day: 'numeric',
-                          })} • {new Date(evt.startTime).toLocaleTimeString([], {
+                          })} · {new Date(evt.startTime).toLocaleTimeString([], {
                             hour: 'numeric',
                             minute: '2-digit',
                           })}
@@ -245,38 +247,10 @@ export const StudentHome: React.FC<StudentHomeProps> = ({
                   </div>
                 </div>
 
-                {/* 3. Clear Button Hierarchy: Secondary (View Details) + Primary (Register / My Pass) */}
-                <div
-                  className="px-4 sm:px-5 py-3.5 bg-[#EAE5DB]/50 border-t border-[#B9B4AA] flex items-center justify-between gap-2"
-                  onClick={e => e.stopPropagation()}
-                >
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => onOpenEvent(evt)}
-                  >
-                    View Details
-                  </Button>
-
-                  {myReg ? (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      leftIcon={<Ticket className="w-3.5 h-3.5" />}
-                      onClick={() => onOpenPass(myReg, evt)}
-                    >
-                      My Pass
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      disabled={isFull}
-                      onClick={() => onOpenEvent(evt)}
-                    >
-                      {isFull ? 'Full' : 'Register'}
-                    </Button>
-                  )}
+                {/* ONE Primary Action on Card: View Event -> */}
+                <div className="px-4 sm:px-5 py-3.5 bg-[#FCFAF5] border-t border-[#EAE5DB] flex items-center justify-between text-sm font-bold text-[#B6533C] group-hover:bg-[#EAE5DB]/40 transition-colors">
+                  <span>View Event</span>
+                  <ArrowRight className="w-4 h-4" />
                 </div>
               </div>
             );

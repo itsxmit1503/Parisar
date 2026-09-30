@@ -7,8 +7,7 @@ import {
   Search, 
   Calendar, 
   MapPin, 
-  Clock, 
-  Ticket,
+  ArrowRight,
   SlidersHorizontal,
 } from 'lucide-react';
 import { CategoryBadge } from '../ui/Badge';
@@ -19,20 +18,12 @@ interface EventDiscoveryProps {
   onOpenPass: (eventId: string) => void;
 }
 
-const CATEGORIES: ('All' | EventCategory)[] = [
+const PRIMARY_CATEGORIES: ('All' | EventCategory)[] = [
   'All',
-  'Workshop',
   'Seminar',
+  'Workshop',
   'Cultural',
   'Competition',
-  'Sports',
-  'Technology',
-  'Coding',
-  'Entrepreneurship',
-  'Academic',
-  'Club',
-  'Placement',
-  'Other',
 ];
 
 const DEPARTMENTS = [
@@ -60,7 +51,6 @@ const VENUES = [
 
 export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
   onOpenEvent,
-  onOpenPass,
 }) => {
   const { events, registrations, currentUser } = useApp();
 
@@ -142,100 +132,69 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
   }, [events, selectedCategory, searchQuery, availabilityFilter, departmentFilter, venueFilter, registeredEventIds]);
 
   return (
-    <div className="max-w-6xl mx-auto space-y-5 pb-20 lg:pb-12">
-      {/* 1. Events Header */}
-      <div className="border-b border-[#B9B4AA] pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="max-w-5xl mx-auto space-y-6 pb-20 lg:pb-12">
+      {/* 1. Events Page Header */}
+      <div className="flex items-end justify-between gap-3">
         <div>
-          <div className="text-[11px] font-mono font-bold uppercase tracking-widest text-[#B6533C] mb-1">
-            PARISAR • DHSGSU Events Directory
+          <div className="text-xs font-mono font-bold uppercase tracking-widest text-[#B6533C]">
+            PARISAR · DHSGSU
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
             Campus Events
           </h1>
-          <p className="text-sm text-[#62605B] mt-0.5">
-            Browse verified seminars, workshops, cultural programs, and competitions across DHSGSU.
-          </p>
         </div>
 
         <button
           onClick={() => setShowFiltersDrawer(!showFiltersDrawer)}
-          className="self-start sm:self-auto min-h-[42px] px-4 py-2 rounded-[3px] bg-[#FCFAF5] border border-[#B9B4AA] text-xs font-bold text-[#18212B] shadow-[2px_2px_0_0_#18212B] flex items-center gap-2 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer touch-manipulation"
+          className="min-h-[42px] px-3.5 py-2 rounded-[3px] bg-[#FCFAF5] border border-[#B9B4AA] text-xs font-bold text-[#18212B] shadow-[1px_1px_0_0_#18212B] flex items-center gap-2 cursor-pointer touch-manipulation"
         >
           <SlidersHorizontal className="w-4 h-4 text-[#B6533C]" />
-          <span>{showFiltersDrawer ? 'Hide Options' : 'More Filters'}</span>
+          <span>{showFiltersDrawer ? 'Hide Filters' : 'Filters'}</span>
         </button>
       </div>
 
-      {/* 2. Search Bar (Finger-sized touch target) */}
-      <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-3.5 shadow-[2px_2px_0_0_#18212B] flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#62605B]" />
+      {/* 2. Primary Search Field + Compact Category Pills */}
+      <div className="space-y-3">
+        <div className="relative">
+          <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#62605B]" />
           <input
             type="text"
-            placeholder="Search events by title, venue, organizer, or topic..."
+            placeholder="Search events..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full min-h-[46px] pl-10 pr-4 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-medium text-[#18212B] placeholder-[#62605B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.05)] focus:outline-none focus:border-[#18212B]"
+            className="w-full min-h-[48px] pl-11 pr-4 py-3 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] text-sm sm:text-base font-medium text-[#18212B] placeholder-[#62605B] shadow-[2px_2px_0_0_#18212B] focus:outline-none focus:border-[#18212B]"
           />
         </div>
 
-        {/* Status Quick Filter */}
-        <div className="flex items-center gap-1.5 bg-[#EAE5DB] p-1 rounded-[3px] border border-[#B9B4AA] text-xs">
-          <button
-            onClick={() => setAvailabilityFilter('all')}
-            className={`min-h-[38px] px-3 py-1.5 rounded-[2px] font-bold transition-all cursor-pointer touch-manipulation ${
-              availabilityFilter === 'all' ? 'bg-[#FCFAF5] text-[#18212B] shadow-xs' : 'text-[#62605B]'
-            }`}
-          >
-            All Events
-          </button>
-          <button
-            onClick={() => setAvailabilityFilter('open')}
-            className={`min-h-[38px] px-3 py-1.5 rounded-[2px] font-bold transition-all cursor-pointer touch-manipulation ${
-              availabilityFilter === 'open' ? 'bg-[#FCFAF5] text-[#2F613B] shadow-xs' : 'text-[#62605B]'
-            }`}
-          >
-            Open Seats
-          </button>
-          <button
-            onClick={() => setAvailabilityFilter('registered')}
-            className={`min-h-[38px] px-3 py-1.5 rounded-[2px] font-bold transition-all cursor-pointer touch-manipulation ${
-              availabilityFilter === 'registered' ? 'bg-[#B6533C] text-white shadow-xs' : 'text-[#62605B]'
-            }`}
-          >
-            Registered
-          </button>
+        {/* Compact Category Filters: All, Seminar, Workshop, Cultural, Competition */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {PRIMARY_CATEGORIES.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`min-h-[38px] px-3.5 py-1.5 text-xs font-bold rounded-[3px] border transition-all whitespace-nowrap cursor-pointer touch-manipulation ${
+                selectedCategory === cat
+                  ? 'bg-[#18212B] text-[#FCFAF5] border-[#18212B]'
+                  : 'bg-[#EAE5DB]/70 text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* 3. Categories (Comfortable finger-sized pills) */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-none">
-        {CATEGORIES.map(cat => (
-          <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className={`min-h-[40px] px-4 py-2 text-xs font-bold rounded-[3px] border transition-all whitespace-nowrap cursor-pointer touch-manipulation ${
-              selectedCategory === cat
-                ? 'bg-[#18212B] text-[#FCFAF5] border-[#18212B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)]'
-                : 'bg-[#FCFAF5] text-[#18212B] border-[#B9B4AA] shadow-[1px_1px_0_0_#18212B] hover:bg-[#EAE5DB] active:translate-x-[1px] active:translate-y-[1px]'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Collapsible Secondary Filters (Progressive Disclosure) */}
+      {/* Optional Additional Filters Drawer */}
       {showFiltersDrawer && (
-        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-4 shadow-[2px_2px_0_0_#18212B] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in duration-150">
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-4 shadow-[2px_2px_0_0_#18212B] grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="text-xs font-bold text-[#18212B] block mb-1.5">
-              Filter by Department / Council
+              Department
             </label>
             <select
               value={departmentFilter}
               onChange={e => setDepartmentFilter(e.target.value)}
-              className="w-full min-h-[44px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B]"
+              className="w-full min-h-[44px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-semibold text-[#18212B]"
             >
               {DEPARTMENTS.map(d => (
                 <option key={d} value={d}>
@@ -247,12 +206,12 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
 
           <div>
             <label className="text-xs font-bold text-[#18212B] block mb-1.5">
-              Filter by Campus Venue
+              Venue
             </label>
             <select
               value={venueFilter}
               onChange={e => setVenueFilter(e.target.value)}
-              className="w-full min-h-[44px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B]"
+              className="w-full min-h-[44px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-semibold text-[#18212B]"
             >
               {VENUES.map(v => (
                 <option key={v} value={v}>
@@ -262,42 +221,53 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
             </select>
           </div>
 
-          <div className="flex items-end justify-between gap-2">
-            <button
-              onClick={() => {
-                setSelectedCategory('All');
-                setSearchQuery('');
-                setAvailabilityFilter('all');
-                setDepartmentFilter('All Departments');
-                setVenueFilter('All Venues');
-              }}
-              className="min-h-[44px] px-4 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-bold text-[#18212B] hover:bg-[#EAE5DB]/80 cursor-pointer touch-manipulation"
-            >
-              Reset Filters
-            </button>
-            <span className="text-xs font-mono text-[#62605B] pb-2">
-              Showing <strong>{filteredEvents.length}</strong> events
-            </span>
+          <div>
+            <label className="text-xs font-bold text-[#18212B] block mb-1.5">
+              Status
+            </label>
+            <div className="flex items-center gap-1.5">
+              <select
+                value={availabilityFilter}
+                onChange={e => setAvailabilityFilter(e.target.value as 'all' | 'open' | 'registered')}
+                className="flex-1 min-h-[44px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-semibold text-[#18212B]"
+              >
+                <option value="all">All Events</option>
+                <option value="open">Open Seats Only</option>
+                <option value="registered">Registered Only</option>
+              </select>
+              <button
+                onClick={() => {
+                  setSelectedCategory('All');
+                  setSearchQuery('');
+                  setAvailabilityFilter('all');
+                  setDepartmentFilter('All Departments');
+                  setVenueFilter('All Venues');
+                }}
+                className="min-h-[44px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-bold text-[#18212B] cursor-pointer"
+              >
+                Reset
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* 4. Upcoming Events Grid (Simplified 1-2 Second Scannable Event Cards) */}
+      {/* 3. Upcoming Events Grid — Clean Single-Action Cards */}
       {filteredEvents.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {filteredEvents.map(evt => {
             const isRegistered = registeredEventIds.has(evt._id);
-            const remaining = evt.capacity - evt.registrationCount;
-            const isFull = remaining <= 0;
+            const isFull = evt.registrationCount >= evt.capacity;
+            const isClosed = new Date() > new Date(evt.registrationDeadline);
 
             return (
               <div
                 key={evt._id}
                 onClick={() => onOpenEvent(evt)}
-                className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] overflow-hidden flex flex-col justify-between cursor-pointer active:translate-x-[1px] active:translate-y-[1px] transition-all"
+                className="group bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] overflow-hidden flex flex-col justify-between cursor-pointer active:translate-y-[1px] transition-all"
               >
                 <div>
-                  {/* Event Image + Category + Registration Status */}
+                  {/* Event Image + Category + Useful Status Badge */}
                   <div className="relative h-44 w-full bg-[#EAE5DB] border-b border-[#B9B4AA] overflow-hidden">
                     <img
                       src={evt.coverImage}
@@ -308,92 +278,58 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
                       <CategoryBadge category={evt.category} />
                     </div>
 
-                    <div className="absolute top-3 right-3">
-                      {isRegistered ? (
-                        <span className="px-2.5 py-1 rounded-[2px] bg-[#2F613B] text-white text-[11px] font-mono font-bold uppercase border border-[#18212B] flex items-center gap-1 shadow-xs">
-                          <Ticket className="w-3 h-3" /> Registered
-                        </span>
-                      ) : isFull ? (
-                        <span className="px-2.5 py-1 rounded-[2px] bg-[#A83226] text-white text-[11px] font-mono font-bold uppercase border border-[#18212B]">
-                          Full
-                        </span>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-[2px] bg-[#FCFAF5] text-[#18212B] text-[11px] font-mono font-bold uppercase border border-[#18212B]">
-                          {remaining} Seats Open
-                        </span>
-                      )}
-                    </div>
+                    {(isRegistered || isFull || isClosed) && (
+                      <div className="absolute top-3 right-3">
+                        {isRegistered ? (
+                          <span className="px-2.5 py-1 rounded-[2px] bg-[#2F613B] text-white text-[11px] font-bold shadow-sm">
+                            Registered
+                          </span>
+                        ) : isClosed ? (
+                          <span className="px-2.5 py-1 rounded-[2px] bg-[#18212B] text-white text-[11px] font-bold shadow-sm">
+                            Closed
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-[2px] bg-[#A83226] text-white text-[11px] font-bold shadow-sm">
+                            Full
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Body: Event Title, Date, Venue */}
-                  <div className="p-4 space-y-3">
-                    <h3 className="font-bold text-base sm:text-lg text-[#18212B] line-clamp-2 leading-snug">
+                  {/* Body: Event Title, Date/Time, Venue */}
+                  <div className="p-4 sm:p-5 space-y-2.5">
+                    <h3 className="font-extrabold text-base sm:text-lg text-[#18212B] group-hover:text-[#B6533C] line-clamp-2 leading-snug transition-colors">
                       {evt.title}
                     </h3>
 
-                    <div className="space-y-1.5 text-xs text-[#62605B]">
+                    <div className="space-y-1.5 text-xs sm:text-sm text-[#62605B] pt-1">
                       <div className="flex items-center gap-2 text-[#18212B] font-medium">
                         <Calendar className="w-4 h-4 text-[#B6533C] shrink-0" />
                         <span>
                           {new Date(evt.startTime).toLocaleDateString([], {
+                            weekday: 'short',
                             month: 'short',
                             day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </span>
-                        <span>•</span>
-                        <Clock className="w-4 h-4 text-[#64788A] shrink-0" />
-                        <span>
-                          {new Date(evt.startTime).toLocaleTimeString([], {
+                          })} · {new Date(evt.startTime).toLocaleTimeString([], {
                             hour: 'numeric',
                             minute: '2-digit',
                           })}
                         </span>
                       </div>
 
-                      <div className="flex items-center gap-2 text-[#18212B] font-medium">
-                        <MapPin className="w-4 h-4 text-[#B6533C] shrink-0" />
+                      <div className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-[#64788A] shrink-0" />
                         <span className="truncate">{evt.venue}</span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Clear Primary vs Secondary Button Hierarchy */}
-                <div
-                  className="p-4 pt-3 border-t border-[#EAE5DB] bg-[#FCFAF5] flex items-center gap-2.5"
-                  onClick={e => e.stopPropagation()}
-                >
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="flex-1"
-                    onClick={() => onOpenEvent(evt)}
-                  >
-                    View Details
-                  </Button>
-
-                  {isRegistered ? (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      className="flex-1"
-                      leftIcon={<Ticket className="w-4 h-4" />}
-                      onClick={() => onOpenPass(evt._id)}
-                    >
-                      My Pass
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      className="flex-1"
-                      disabled={isFull}
-                      onClick={() => onOpenEvent(evt)}
-                    >
-                      {isFull ? 'Full' : 'Register'}
-                    </Button>
-                  )}
+                {/* One Primary Action: View Event -> */}
+                <div className="px-4 sm:px-5 py-3.5 border-t border-[#EAE5DB] bg-[#FCFAF5] flex items-center justify-between text-sm font-bold text-[#B6533C] group-hover:bg-[#EAE5DB]/40 transition-colors">
+                  <span>View Event</span>
+                  <ArrowRight className="w-4 h-4" />
                 </div>
               </div>
             );
@@ -402,9 +338,9 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
       ) : (
         <div className="p-10 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] text-center space-y-3 shadow-[2px_2px_0_0_#18212B]">
           <Calendar className="w-8 h-8 text-[#62605B] mx-auto opacity-50" />
-          <h3 className="font-bold text-base text-[#18212B]">No campus events match your search</h3>
+          <h3 className="font-bold text-base text-[#18212B]">No events match your search</h3>
           <p className="text-sm text-[#62605B] max-w-md mx-auto">
-            Reset your filters to view all upcoming events across Dr. Harisingh Gour Vishwavidyalaya.
+            Reset your filters to view all upcoming campus events.
           </p>
           <Button
             variant="secondary"

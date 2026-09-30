@@ -230,37 +230,6 @@ export function MainApp({ initialTab = 'landing' }: MainAppProps) {
         onLogout={() => setActiveTab('landing')}
       />
 
-      {/* Institutional Banner on Landing Page */}
-      {effectiveTab === 'landing' && (
-        <div className="bg-[#EAE5DB] border-b border-[#B9B4AA] py-2 px-4 text-center text-xs font-mono">
-          <span className="text-[#62605B]">Dr. Harisingh Gour Vishwavidyalaya • Central University, Sagar (M.P.) • </span>
-          {!isAuthenticated ? (
-            <>
-              <button 
-                onClick={() => setActiveTab('auth-login')}
-                className="text-[#B6533C] font-bold underline hover:text-[#18212B] ml-1 cursor-pointer"
-              >
-                Sign In
-              </button>
-              <span className="text-[#62605B] mx-1.5">or</span>
-              <button 
-                onClick={() => setActiveTab('auth-signup')}
-                className="text-[#18212B] font-bold underline hover:text-[#B6533C] cursor-pointer"
-              >
-                Create Account
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleEnterApp}
-              className="text-[#B6533C] font-bold underline hover:text-[#18212B] ml-1 cursor-pointer"
-            >
-              Return to {currentUser.role === 'admin' ? 'Admin' : currentUser.role === 'organizer' ? 'Organizer' : 'Student'} Panel →
-            </button>
-          )}
-        </div>
-      )}
-
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 pt-5 sm:pt-8 pb-24 lg:pb-12">
         {/* LANDING PAGE */}

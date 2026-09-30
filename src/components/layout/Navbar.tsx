@@ -352,25 +352,14 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-center gap-2.5">
               {!isAuthenticated ? (
                 <>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      leftIcon={<LogIn className="w-3.5 h-3.5" />}
-                      onClick={() => handleNavClick('auth-login')}
-                    >
-                      Sign In
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      leftIcon={<UserPlus className="w-3.5 h-3.5" />}
-                      onClick={() => handleNavClick('auth-signup')}
-                      className="hidden sm:inline-flex"
-                    >
-                      Create Account
-                    </Button>
-                  </div>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    leftIcon={<LogIn className="w-3.5 h-3.5" />}
+                    onClick={() => handleNavClick('auth-login')}
+                  >
+                    Sign In
+                  </Button>
                   {/* Mobile Menu Hamburger for Logged-Out Visitors */}
                   <button
                     onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -585,7 +574,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <Ticket className="w-5 h-5" />
-                <span className="text-[11px] leading-none">My Pass</span>
+                <span className="text-[11px] leading-none">Pass</span>
                 {userConfirmedPasses > 0 && (
                   <span className="absolute top-1 right-2.5 w-4 h-4 rounded-full bg-[#B6533C] text-white text-[9px] font-bold flex items-center justify-center">
                     {userConfirmedPasses}

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   Calendar, 
@@ -29,114 +29,102 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   onViewParticipants,
 }) => {
   const { currentUser, events, attendance } = useApp();
+  const [statusFilter, setStatusFilter] = useState<'upcoming' | 'pending' | 'completed'>('upcoming');
 
   const myEvents = events.filter(e => e.organizerId === currentUser._id);
 
+  const upcomingEvents = myEvents.filter(
+    e => e.status === 'PUBLISHED' || e.status === 'APPROVED'
+  );
+  const pendingEvents = myEvents.filter(
+    e => e.status === 'PENDING_REVIEW' || e.status === 'DRAFT'
+  );
+  const completedEvents = myEvents.filter(
+    e => e.status === 'COMPLETED' || e.status === 'REJECTED' || e.status === 'CANCELLED'
+  );
+
+  const displayedEvents =
+    statusFilter === 'upcoming'
+      ? upcomingEvents
+      : statusFilter === 'pending'
+      ? pendingEvents
+      : completedEvents;
+
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-24 lg:pb-16">
-      {/* 1. Task-Focused Organizer Header (Sections 4, 5, 10) */}
-      <div className="bg-[#FCFAF5] border-2 border-[#18212B] rounded-[4px] p-5 sm:p-7 shadow-[3px_3px_0_0_#18212B]">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="text-xs font-mono font-bold uppercase tracking-widest text-[#B6533C]">
-              Verified Organizer Panel • DHSGSU
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
-              {currentUser.name}
-            </h1>
-            <p className="text-xs sm:text-sm text-[#62605B]">
-              {currentUser.designation || 'Event Organizer'} • {currentUser.department}
-            </p>
+      {/* 1. Greeting & Primary CTA: Create Event */}
+      <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1 border-b border-[#B9B4AA] pb-5">
+        <div className="space-y-1">
+          <div className="text-xs font-mono font-bold uppercase tracking-widest text-[#B6533C]">
+            Organizer Dashboard · DHSGSU
           </div>
-
-          {/* Primary & Secondary Actions */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
-            <Button
-              variant="secondary"
-              size="md"
-              leftIcon={<QrCode className="w-4 h-4 text-[#B6533C]" />}
-              onClick={() => onScanAttendance()}
-            >
-              Attendance Scanner
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              leftIcon={<PlusCircle className="w-4 h-4" />}
-              onClick={onCreateEvent}
-            >
-              Create Event
-            </Button>
-          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
+            Good morning, {currentUser.name.split(' ')[0]}
+          </h1>
+          <p className="text-sm text-[#62605B]">
+            {currentUser.department}
+          </p>
         </div>
-      </div>
 
-      {/* 2. Primary Organizer Tasks (3 Clear Finger-Sized Cards) */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <button
+        <Button
+          variant="primary"
+          size="lg"
+          leftIcon={<PlusCircle className="w-5 h-5" />}
           onClick={onCreateEvent}
-          className="p-5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-3 cursor-pointer touch-manipulation"
+          className="self-start sm:self-auto"
         >
-          <div className="space-y-1">
-            <div className="text-sm font-extrabold text-[#18212B]">Create Event</div>
-            <div className="text-xs text-[#62605B]">Submit a new event proposal</div>
-          </div>
-          <div className="w-10 h-10 rounded-[3px] bg-[#B6533C] text-white flex items-center justify-center shrink-0">
-            <PlusCircle className="w-5 h-5" />
-          </div>
-        </button>
-
-        <button
-          onClick={() => onViewParticipants()}
-          className="p-5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-3 cursor-pointer touch-manipulation"
-        >
-          <div className="space-y-1">
-            <div className="text-sm font-extrabold text-[#18212B]">Participants</div>
-            <div className="text-xs text-[#62605B]">View & manage registrations</div>
-          </div>
-          <div className="w-10 h-10 rounded-[3px] bg-[#EAE5DB] text-[#18212B] border border-[#B9B4AA] flex items-center justify-center shrink-0">
-            <Users className="w-5 h-5" />
-          </div>
-        </button>
-
-        <button
-          onClick={() => onScanAttendance()}
-          className="p-5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-3 cursor-pointer touch-manipulation"
-        >
-          <div className="space-y-1">
-            <div className="text-sm font-extrabold text-[#18212B]">Attendance</div>
-            <div className="text-xs text-[#62605B]">Scan QR passes & check in</div>
-          </div>
-          <div className="w-10 h-10 rounded-[3px] bg-[#EAE5DB] text-[#B6533C] border border-[#B9B4AA] flex items-center justify-center shrink-0">
-            <QrCode className="w-5 h-5" />
-          </div>
-        </button>
+          Create Event
+        </Button>
       </section>
 
-      {/* 3. Upcoming Managed Events & Status (Prioritized in Sections 4 & 5) */}
-      <section className="space-y-4">
-        <div className="flex items-center justify-between border-b border-[#B9B4AA] pb-3">
-          <div>
-            <h2 className="text-base sm:text-lg font-extrabold text-[#18212B]">
-              My Managed Events ({myEvents.length})
-            </h2>
-            <p className="text-xs sm:text-sm text-[#62605B]">
-              Track event approval status, participant registrations, and venue attendance.
-            </p>
+      {/* 2. Your Events: Upcoming / Pending Approval / Completed */}
+      <section className="space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h2 className="text-lg sm:text-xl font-extrabold text-[#18212B]">
+            Your Events
+          </h2>
+
+          {/* Clean Status Tabs */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            <button
+              onClick={() => setStatusFilter('upcoming')}
+              className={`min-h-[40px] px-4 py-2 rounded-[3px] text-xs font-bold border transition-all cursor-pointer touch-manipulation ${
+                statusFilter === 'upcoming'
+                  ? 'bg-[#18212B] text-[#FCFAF5] border-[#18212B]'
+                  : 'bg-[#FCFAF5] text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
+              }`}
+            >
+              Upcoming ({upcomingEvents.length})
+            </button>
+
+            <button
+              onClick={() => setStatusFilter('pending')}
+              className={`min-h-[40px] px-4 py-2 rounded-[3px] text-xs font-bold border transition-all cursor-pointer touch-manipulation ${
+                statusFilter === 'pending'
+                  ? 'bg-[#18212B] text-[#FCFAF5] border-[#18212B]'
+                  : 'bg-[#FCFAF5] text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
+              }`}
+            >
+              Pending Approval ({pendingEvents.length})
+            </button>
+
+            <button
+              onClick={() => setStatusFilter('completed')}
+              className={`min-h-[40px] px-4 py-2 rounded-[3px] text-xs font-bold border transition-all cursor-pointer touch-manipulation ${
+                statusFilter === 'completed'
+                  ? 'bg-[#18212B] text-[#FCFAF5] border-[#18212B]'
+                  : 'bg-[#FCFAF5] text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
+              }`}
+            >
+              Completed ({completedEvents.length})
+            </button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onManageEvents}
-            rightIcon={<ArrowRight className="w-3.5 h-3.5" />}
-          >
-            Manage All
-          </Button>
         </div>
 
-        {myEvents.length > 0 ? (
+        {/* Event List with Contextual Participants & Attendance Actions */}
+        {displayedEvents.length > 0 ? (
           <div className="space-y-4">
-            {myEvents.map(evt => {
+            {displayedEvents.map(evt => {
               const checkedInCount = attendance.filter(a => a.eventId === evt._id).length;
 
               return (
@@ -160,8 +148,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                         {new Date(evt.startTime).toLocaleDateString([], {
                           month: 'short',
                           day: 'numeric',
-                          year: 'numeric',
-                        })} • {new Date(evt.startTime).toLocaleTimeString([], {
+                        })} · {new Date(evt.startTime).toLocaleTimeString([], {
                           hour: 'numeric',
                           minute: '2-digit',
                         })}
@@ -173,14 +160,14 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                     </div>
 
                     <div className="text-xs font-mono text-[#62605B] pt-0.5">
-                      Registered: <strong className="text-[#18212B]">{evt.registrationCount} / {evt.capacity}</strong>
-                      {' • '}
+                      Participants: <strong className="text-[#18212B]">{evt.registrationCount}/{evt.capacity}</strong>
+                      {' · '}
                       Checked In: <strong className="text-[#2F613B]">{checkedInCount}</strong>
                     </div>
                   </div>
 
-                  {/* Secondary (Participants) + Primary (Check In / Scan) */}
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-[#B9B4AA]">
+                  {/* Contextual Actions: Participants + Attendance */}
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-[#EAE5DB]">
                     <Button
                       variant="secondary"
                       size="md"
@@ -195,7 +182,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                       leftIcon={<QrCode className="w-4 h-4" />}
                       onClick={() => onScanAttendance(evt._id)}
                     >
-                      Check In
+                      Attendance
                     </Button>
                   </div>
                 </div>
@@ -204,13 +191,20 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
           </div>
         ) : (
           <div className="p-8 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] text-center space-y-3">
-            <h3 className="text-base font-bold text-[#18212B]">No events created yet</h3>
+            <h3 className="text-base font-bold text-[#18212B]">
+              No {statusFilter === 'upcoming' ? 'upcoming' : statusFilter === 'pending' ? 'pending' : 'completed'} events
+            </h3>
             <p className="text-xs sm:text-sm text-[#62605B] max-w-md mx-auto">
-              Create your first campus event proposal to submit it for University Administrator review.
+              Create a new event or view all your managed events.
             </p>
-            <Button variant="primary" size="md" onClick={onCreateEvent}>
-              Create Event
-            </Button>
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <Button variant="secondary" size="sm" onClick={onManageEvents} rightIcon={<ArrowRight className="w-3.5 h-3.5" />}>
+                All Managed Events
+              </Button>
+              <Button variant="primary" size="sm" onClick={onCreateEvent}>
+                Create Event
+              </Button>
+            </div>
           </div>
         )}
       </section>
