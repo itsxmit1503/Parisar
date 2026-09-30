@@ -33,8 +33,9 @@ interface AppContextType {
   // Current session & Auth state
   currentUser: User;
   isAuthenticated: boolean;
+  authToken: string | null;
   setCurrentUserId: (id: string) => void;
-  loginWithCredentials: (identifier: string, password?: string, adminOnly?: boolean) => ApiResponse<User>;
+  loginWithCredentials: (identifier: string, password?: string, adminOnly?: boolean) => Promise<ApiResponse<User>>;
   registerStudentAccount: (data: {
     name: string;
     rollNumber: string;
@@ -42,7 +43,7 @@ interface AppContextType {
     department: string;
     semester: number;
     password?: string;
-  }) => ApiResponse<User>;
+  }) => Promise<ApiResponse<User>>;
   registerOrganizerAccount: (data: {
     name: string;
     universityId: string;
@@ -52,7 +53,7 @@ interface AppContextType {
     phone: string;
     reason: string;
     password?: string;
-  }) => ApiResponse<User>;
+  }) => Promise<ApiResponse<User>>;
   resubmitOrganizerVerification: (reason: string, designation?: string, department?: string) => ApiResponse<OrganizerVerificationRequest>;
   updateUserProfile: (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization'>>) => ApiResponse<User>;
   logout: () => void;
@@ -99,11 +100,42 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_PREFIX = 'parisar_dhsgsu_v2_';
 
+// Helper to merge two user lists without losing created accounts from either client or backend
+function mergeUsersList(serverUsers: User[], clientUsers: User[]): User[] {
+  const merged = [...serverUsers];
+  for (const cu of clientUsers) {
+    if (!cu || !cu.email) continue;
+    const idx = merged.findIndex(
+      su =>
+        su._id === cu._id ||
+        su.email.toLowerCase() === cu.email.toLowerCase() ||
+        (cu.rollNumber &&
+          su.rollNumber &&
+          su.rollNumber.toUpperCase() === cu.rollNumber.toUpperCase())
+    );
+    if (idx === -1) {
+      merged.unshift(cu);
+    } else {
+      merged[idx] = {
+        ...merged[idx],
+        ...cu,
+        organizerStatus:
+          merged[idx].organizerStatus === 'VERIFIED'
+            ? 'VERIFIED'
+            : cu.organizerStatus || merged[idx].organizerStatus,
+        passwordHash: cu.passwordHash || merged[idx].passwordHash,
+      };
+    }
+  }
+  return merged;
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   
   const [currentUserId, setCurrentUserIdState] = useState<string>('student-1');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authToken, setAuthToken] = useState<string | null>(null);
   const [allUsers, setAllUsers] = useState<User[]>(INITIAL_USERS);
   const [events, setEvents] = useState<CampusEvent[]>(INITIAL_EVENTS);
   const [venues] = useState<CampusVenue[]>(CAMPUS_VENUES);
@@ -114,11 +146,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [feedback, setFeedback] = useState<EventFeedback[]>(INITIAL_FEEDBACK);
   const [organizerRequests, setOrganizerRequests] = useState<OrganizerVerificationRequest[]>(INITIAL_ORGANIZER_REQUESTS);
 
-  // Load state from localStorage on initial mount
+  // Load cached state and synchronize with shared PARISAR Auth API (/api/v1/auth)
   useEffect(() => {
+    let localUsersSnapshot: User[] = INITIAL_USERS;
+    let localReqsSnapshot: OrganizerVerificationRequest[] = INITIAL_ORGANIZER_REQUESTS;
+
     try {
       const storedUsers = localStorage.getItem(`${STORAGE_PREFIX}users`);
-      if (storedUsers) setAllUsers(JSON.parse(storedUsers));
+      if (storedUsers) {
+        localUsersSnapshot = JSON.parse(storedUsers);
+        setAllUsers(localUsersSnapshot);
+      }
 
       const storedEvents = localStorage.getItem(`${STORAGE_PREFIX}events`);
       if (storedEvents) setEvents(JSON.parse(storedEvents));
@@ -139,21 +177,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (storedFb) setFeedback(JSON.parse(storedFb));
 
       const storedReqs = localStorage.getItem(`${STORAGE_PREFIX}organizerRequests`);
-      if (storedReqs) setOrganizerRequests(JSON.parse(storedReqs));
+      if (storedReqs) {
+        localReqsSnapshot = JSON.parse(storedReqs);
+        setOrganizerRequests(localReqsSnapshot);
+      }
 
       const storedUser = localStorage.getItem(`${STORAGE_PREFIX}currentUserId`);
       if (storedUser) setCurrentUserIdState(storedUser);
 
+      const storedToken = localStorage.getItem(`${STORAGE_PREFIX}authToken`);
+      if (storedToken) setAuthToken(storedToken);
+
       const storedAuth = localStorage.getItem(`${STORAGE_PREFIX}isAuthenticated`);
       if (storedAuth === 'true') setIsAuthenticated(true);
     } catch {
-      // Fallback to initial mock if error reading
+      // Fallback to initial seed data if storage error
     } finally {
       setIsLoaded(true);
     }
+
+    // Sync any locally cached accounts up to the shared server database AND pull shared accounts down
+    (async () => {
+      try {
+        const res = await fetch('/api/v1/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'sync-state',
+            users: localUsersSnapshot,
+            organizerRequests: localReqsSnapshot,
+          }),
+        });
+        if (res.ok) {
+          const payload = await res.json();
+          if (payload.success && payload.data) {
+            if (Array.isArray(payload.data.users)) {
+              setAllUsers(prev => mergeUsersList(payload.data.users, prev));
+            }
+            if (Array.isArray(payload.data.organizerRequests)) {
+              setOrganizerRequests(payload.data.organizerRequests);
+            }
+          }
+        }
+      } catch {
+        // Offline or network unavailable — continue with cached session
+      }
+    })();
   }, []);
 
-  // Save to localStorage when collections change
+  // Save session cache when collections change
   useEffect(() => {
     if (!isLoaded) return;
     try {
@@ -167,10 +239,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       localStorage.setItem(`${STORAGE_PREFIX}organizerRequests`, JSON.stringify(organizerRequests));
       localStorage.setItem(`${STORAGE_PREFIX}currentUserId`, currentUserId);
       localStorage.setItem(`${STORAGE_PREFIX}isAuthenticated`, String(isAuthenticated));
+      if (authToken) {
+        localStorage.setItem(`${STORAGE_PREFIX}authToken`, authToken);
+      } else {
+        localStorage.removeItem(`${STORAGE_PREFIX}authToken`);
+      }
     } catch (e) {
       console.warn('Storage quota or persistence warning:', e);
     }
-  }, [isLoaded, allUsers, events, registrations, attendance, certificates, notifications, feedback, organizerRequests, currentUserId, isAuthenticated]);
+  }, [isLoaded, allUsers, events, registrations, attendance, certificates, notifications, feedback, organizerRequests, currentUserId, isAuthenticated, authToken]);
 
   const currentUser = allUsers.find(u => u._id === currentUserId) || allUsers[0];
 
@@ -181,27 +258,97 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const logout = () => {
     setIsAuthenticated(false);
+    setAuthToken(null);
     try {
       localStorage.setItem(`${STORAGE_PREFIX}isAuthenticated`, 'false');
+      localStorage.removeItem(`${STORAGE_PREFIX}authToken`);
     } catch {
       // ignore
     }
   };
 
-  const loginWithCredentials = (identifier: string, password?: string, adminOnly = false): ApiResponse<User> => {
+  const loginWithCredentials = async (
+    identifier: string,
+    password?: string,
+    adminOnly = false
+  ): Promise<ApiResponse<User>> => {
     const cleanId = identifier.trim().toLowerCase();
     if (!cleanId) {
-      return { success: false, error: { code: 'EMPTY_IDENTIFIER', message: 'Please enter your DHSGSU Roll Number, Employee ID, or University Email.' } };
-    }
-    if (password !== undefined && password.trim().length < 4) {
-      return { success: false, error: { code: 'INVALID_PASSWORD', message: 'Password must be at least 4 characters long.' } };
+      return {
+        success: false,
+        error: {
+          code: 'EMPTY_IDENTIFIER',
+          message: 'Account not found. Check your email or roll number.',
+        },
+      };
     }
 
-    const found = allUsers.find(u =>
-      u._id.toLowerCase() === cleanId ||
-      u.email.toLowerCase() === cleanId ||
-      (u.rollNumber && u.rollNumber.toLowerCase() === cleanId) ||
-      u.name.toLowerCase() === cleanId
+    if (password !== undefined && !password.trim()) {
+      return {
+        success: false,
+        error: {
+          code: 'EMPTY_PASSWORD',
+          message: 'Incorrect password.',
+        },
+      };
+    }
+
+    // 1. First sync any locally known accounts and authenticate against the shared PARISAR Auth API
+    try {
+      await fetch('/api/v1/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'sync-state',
+          users: allUsers,
+          organizerRequests,
+        }),
+      });
+
+      const apiRes = await fetch('/api/v1/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'login',
+          identifier: identifier.trim(),
+          password,
+          adminOnly,
+        }),
+      });
+
+      const payload = await apiRes.json();
+      if (apiRes.ok && payload.success && payload.data?.user) {
+        const authedUser: User = payload.data.user;
+        if (Array.isArray(payload.data.users)) {
+          setAllUsers(prev => mergeUsersList(payload.data.users, [authedUser, ...prev]));
+        } else {
+          setAllUsers(prev => mergeUsersList([authedUser], prev));
+        }
+        if (Array.isArray(payload.data.organizerRequests)) {
+          setOrganizerRequests(payload.data.organizerRequests);
+        }
+        setCurrentUserIdState(authedUser._id);
+        setAuthToken(payload.data.token || `parisar_session_${authedUser._id}`);
+        setIsAuthenticated(true);
+        return { success: true, data: authedUser };
+      }
+
+      if (!apiRes.ok && payload.error) {
+        return {
+          success: false,
+          error: payload.error,
+        };
+      }
+    } catch {
+      // Network error fallback: check merged local store
+    }
+
+    // 2. Fallback check in merged user list
+    const found = allUsers.find(
+      u =>
+        u.email.toLowerCase() === cleanId ||
+        (u.rollNumber && u.rollNumber.toLowerCase() === cleanId) ||
+        u._id.toLowerCase() === cleanId
     );
 
     if (!found) {
@@ -209,8 +356,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         success: false,
         error: {
           code: 'ACCOUNT_NOT_FOUND',
-          message: `No registered DHSGSU account matches "${identifier.trim()}". Please check your University ID / Email or create a new campus account.`
-        }
+          message: 'Account not found. Check your email or roll number.',
+        },
+      };
+    }
+
+    if (found.passwordHash && password !== undefined && found.passwordHash !== password) {
+      return {
+        success: false,
+        error: {
+          code: 'INCORRECT_PASSWORD',
+          message: 'Incorrect password.',
+        },
       };
     }
 
@@ -219,42 +376,101 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         success: false,
         error: {
           code: 'UNAUTHORIZED_ADMIN',
-          message: 'Access Denied: This credential is not authorized for the University Administrator Console.'
-        }
+          message: 'Your account is currently unavailable.',
+        },
       };
     }
 
     setCurrentUserIdState(found._id);
+    setAuthToken(`parisar_session_${found._id}`);
     setIsAuthenticated(true);
     return { success: true, data: found };
   };
 
-  const registerStudentAccount = (data: {
+  const registerStudentAccount = async (data: {
     name: string;
     rollNumber: string;
     email: string;
     department: string;
     semester: number;
     password?: string;
-  }): ApiResponse<User> => {
+  }): Promise<ApiResponse<User>> => {
     const cleanEmail = data.email.trim().toLowerCase();
     const cleanRoll = data.rollNumber.trim().toUpperCase();
 
     if (!data.name.trim() || !cleanRoll || !cleanEmail) {
-      return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Full Name, Roll Number, and University Email are mandatory.' } };
-    }
-
-    const duplicate = allUsers.find(
-      u => u.email.toLowerCase() === cleanEmail || (u.rollNumber && u.rollNumber.toUpperCase() === cleanRoll)
-    );
-    if (duplicate) {
       return {
         success: false,
-        error: { code: 'DUPLICATE_ACCOUNT', message: 'An account with this University Roll Number or Email already exists. Please sign in instead.' }
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Full Name, Roll Number, and University Email are mandatory.',
+        },
       };
     }
 
+    // 1. Create/Sync Student Account in the shared PARISAR Auth API (/api/v1/auth)
+    try {
+      const apiRes = await fetch('/api/v1/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register-student',
+          name: data.name.trim(),
+          rollNumber: cleanRoll,
+          email: cleanEmail,
+          department: data.department,
+          semester: data.semester,
+          password: data.password,
+        }),
+      });
+
+      const payload = await apiRes.json();
+      if (apiRes.ok && payload.success && payload.data?.user) {
+        const createdUser: User = payload.data.user;
+        if (Array.isArray(payload.data.users)) {
+          setAllUsers(prev => mergeUsersList(payload.data.users, [createdUser, ...prev]));
+        } else {
+          setAllUsers(prev => mergeUsersList([createdUser], prev));
+        }
+        setCurrentUserIdState(createdUser._id);
+        setAuthToken(payload.data.token || `parisar_session_${createdUser._id}`);
+        setIsAuthenticated(true);
+        return { success: true, data: createdUser };
+      }
+
+      if (!apiRes.ok && payload.error) {
+        return {
+          success: false,
+          error: payload.error,
+        };
+      }
+    } catch {
+      // Fallback if offline
+    }
+
     const nowIso = new Date().toISOString();
+    const existingIdx = allUsers.findIndex(
+      u => u.email.toLowerCase() === cleanEmail || (u.rollNumber && u.rollNumber.toUpperCase() === cleanRoll)
+    );
+
+    if (existingIdx !== -1) {
+      const updatedUser: User = {
+        ...allUsers[existingIdx],
+        name: data.name.trim(),
+        email: cleanEmail,
+        rollNumber: cleanRoll,
+        department: data.department,
+        semester: data.semester,
+        passwordHash: data.password || allUsers[existingIdx].passwordHash,
+        updatedAt: nowIso,
+      };
+      setAllUsers(prev => prev.map((u, idx) => (idx === existingIdx ? updatedUser : u)));
+      setCurrentUserIdState(updatedUser._id);
+      setAuthToken(`parisar_session_${updatedUser._id}`);
+      setIsAuthenticated(true);
+      return { success: true, data: updatedUser };
+    }
+
     const newUser: User = {
       _id: `stu-${Date.now()}`,
       name: data.name.trim(),
@@ -263,6 +479,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       department: data.department,
       semester: data.semester,
       role: 'student',
+      passwordHash: data.password,
       organizerStatus: 'NONE',
       interests: ['Workshop', 'Seminar', 'Cultural', 'Competition'],
       profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
@@ -273,11 +490,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setAllUsers(prev => [newUser, ...prev]);
     setCurrentUserIdState(newUser._id);
+    setAuthToken(`parisar_session_${newUser._id}`);
     setIsAuthenticated(true);
     return { success: true, data: newUser };
   };
 
-  const registerOrganizerAccount = (data: {
+  const registerOrganizerAccount = async (data: {
     name: string;
     universityId: string;
     email: string;
@@ -286,25 +504,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     phone: string;
     reason: string;
     password?: string;
-  }): ApiResponse<User> => {
+  }): Promise<ApiResponse<User>> => {
     const cleanEmail = data.email.trim().toLowerCase();
     const cleanId = data.universityId.trim().toUpperCase();
 
     if (!data.name.trim() || !cleanId || !cleanEmail || !data.reason.trim()) {
       return {
         success: false,
-        error: { code: 'VALIDATION_ERROR', message: 'Full Name, University ID, Email, and Justification for organizing are mandatory.' }
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Full Name, University ID, Email, and Justification for organizing are mandatory.',
+        },
       };
     }
 
-    const duplicate = allUsers.find(
-      u => u.email.toLowerCase() === cleanEmail || (u.rollNumber && u.rollNumber.toUpperCase() === cleanId)
-    );
-    if (duplicate) {
-      return {
-        success: false,
-        error: { code: 'DUPLICATE_ACCOUNT', message: 'An account with this University ID or Email already exists. Please sign in instead.' }
-      };
+    // 1. Create Organizer Account in shared PARISAR Auth API (/api/v1/auth)
+    try {
+      const apiRes = await fetch('/api/v1/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'register-organizer',
+          name: data.name.trim(),
+          universityId: cleanId,
+          email: cleanEmail,
+          department: data.department,
+          designation: data.designation.trim() || 'Event Convener Applicant',
+          phone: data.phone.trim() || '+91 98260 00000',
+          reason: data.reason.trim(),
+          password: data.password,
+        }),
+      });
+
+      const payload = await apiRes.json();
+      if (apiRes.ok && payload.success && payload.data?.user) {
+        const createdUser: User = payload.data.user;
+        if (Array.isArray(payload.data.users)) {
+          setAllUsers(prev => mergeUsersList(payload.data.users, [createdUser, ...prev]));
+        } else {
+          setAllUsers(prev => mergeUsersList([createdUser], prev));
+        }
+        if (Array.isArray(payload.data.organizerRequests)) {
+          setOrganizerRequests(payload.data.organizerRequests);
+        }
+        setCurrentUserIdState(createdUser._id);
+        setAuthToken(payload.data.token || `parisar_session_${createdUser._id}`);
+        setIsAuthenticated(true);
+        return { success: true, data: createdUser };
+      }
+
+      if (!apiRes.ok && payload.error) {
+        return {
+          success: false,
+          error: payload.error,
+        };
+      }
+    } catch {
+      // Fallback if offline
     }
 
     const nowIso = new Date().toISOString();
@@ -336,6 +592,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       role: 'organizer',
       organizerStatus: 'PENDING',
       organizerRequest: newReq,
+      passwordHash: data.password,
       interests: ['Seminar', 'Workshop', 'Competition'],
       profileImage: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80',
       phone: data.phone.trim() || '+91 98260 00000',
@@ -346,6 +603,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setOrganizerRequests(prev => [newReq, ...prev]);
     setAllUsers(prev => [newUser, ...prev]);
     setCurrentUserIdState(newUser._id);
+    setAuthToken(`parisar_session_${newUser._id}`);
     setIsAuthenticated(true);
     return { success: true, data: newUser };
   };
@@ -912,7 +1170,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Update user in allUsers
     setAllUsers(prev => prev.map(u => {
-      if (u._id === req.userId || u.email === req.email) {
+      if (u._id === req.userId || u.email.toLowerCase() === req.email.toLowerCase()) {
         return {
           ...u,
           role: 'organizer',
@@ -923,6 +1181,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return u;
     }));
 
+    // Persist organizer approval/rejection to shared PARISAR Auth API (/api/v1/auth)
+    fetch('/api/v1/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'review-organizer',
+        requestId,
+        approve,
+        remarks,
+      }),
+    }).catch(() => {});
+
     return { success: true, data: updatedReq };
   };
 
@@ -931,6 +1201,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       value={{
         currentUser,
         isAuthenticated,
+        authToken,
         setCurrentUserId,
         loginWithCredentials,
         registerStudentAccount,

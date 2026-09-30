@@ -90,7 +90,7 @@ app.get(['/', '/health'], (req, res) => {
 // Authentication & Account Creation Routes (/api/v1/auth)
 // ------------------------------------------------------------------------------
 app.post('/api/v1/auth/login', (req, res) => {
-  const { identifier, email, rollNumber, userId, adminOnly } = req.body;
+  const { identifier, email, rollNumber, password, userId, adminOnly } = req.body;
   const query = (identifier || email || rollNumber || '').trim().toLowerCase();
 
   let user = null;
@@ -108,14 +108,33 @@ app.post('/api/v1/auth/login', (req, res) => {
   if (!user) {
     return res.status(404).json({
       success: false,
-      message: 'No DHSGSU account found matching that Email or University ID.'
+      error: {
+        code: 'ACCOUNT_NOT_FOUND',
+        message: 'Account not found. Check your email or roll number.'
+      },
+      message: 'Account not found. Check your email or roll number.'
+    });
+  }
+
+  if (user.passwordHash && password !== undefined && user.passwordHash !== String(password)) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'INCORRECT_PASSWORD',
+        message: 'Incorrect password.'
+      },
+      message: 'Incorrect password.'
     });
   }
 
   if (adminOnly && user.role !== 'admin') {
     return res.status(403).json({
       success: false,
-      message: 'Access denied. This portal is restricted to authorized University Administrators.'
+      error: {
+        code: 'UNAUTHORIZED_ADMIN',
+        message: 'Your account is currently unavailable.'
+      },
+      message: 'Your account is currently unavailable.'
     });
   }
 
@@ -136,7 +155,7 @@ app.post('/api/v1/auth/login', (req, res) => {
 
 // Student Signup (Section 6: Student -> Student Panel)
 app.post('/api/v1/auth/register-student', (req, res) => {
-  const { name, rollNumber, email, department, semester, phone } = req.body;
+  const { name, rollNumber, email, department, semester, phone, password } = req.body;
   if (!name || !rollNumber || !email) {
     return res.status(400).json({
       success: false,
@@ -144,26 +163,48 @@ app.post('/api/v1/auth/register-student', (req, res) => {
     });
   }
 
-  const exists = dbUsers.find(
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanRoll = rollNumber.trim().toUpperCase();
+
+  const existingIndex = dbUsers.findIndex(
     u =>
-      u.email.toLowerCase() === email.trim().toLowerCase() ||
-      (u.rollNumber && u.rollNumber.toLowerCase() === rollNumber.trim().toLowerCase())
+      u.email.toLowerCase() === cleanEmail ||
+      (u.rollNumber && u.rollNumber.toUpperCase() === cleanRoll)
   );
-  if (exists) {
-    return res.status(409).json({
-      success: false,
-      message: 'An account with this Email or University Roll Number is already registered.'
+
+  if (existingIndex !== -1) {
+    const updatedUser = {
+      ...dbUsers[existingIndex],
+      name: name.trim(),
+      email: cleanEmail,
+      rollNumber: cleanRoll,
+      department: department || dbUsers[existingIndex].department,
+      semester: Number(semester) || dbUsers[existingIndex].semester || 6,
+      passwordHash: password ? String(password) : dbUsers[existingIndex].passwordHash,
+      updatedAt: new Date().toISOString()
+    };
+    dbUsers[existingIndex] = updatedUser;
+    const token = jwt.sign(
+      { userId: updatedUser._id, role: updatedUser.role, email: updatedUser.email },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    return res.status(200).json({
+      success: true,
+      message: 'Student account synced successfully.',
+      data: { token, user: updatedUser }
     });
   }
 
   const newUser = {
     _id: `student-${Date.now()}`,
     name: name.trim(),
-    email: email.trim().toLowerCase(),
-    rollNumber: rollNumber.trim().toUpperCase(),
+    email: cleanEmail,
+    rollNumber: cleanRoll,
     department: department || 'Department of Computer Science & Applications (DCSA)',
-    semester: Number(semester) || 1,
+    semester: Number(semester) || 6,
     role: 'student',
+    passwordHash: password ? String(password) : undefined,
     organizerStatus: 'NONE',
     interests: ['Seminar', 'Workshop', 'Cultural', 'Coding'],
     profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
@@ -171,7 +212,7 @@ app.post('/api/v1/auth/register-student', (req, res) => {
     createdAt: new Date().toISOString()
   };
 
-  dbUsers.push(newUser);
+  dbUsers.unshift(newUser);
 
   const token = jwt.sign(
     { userId: newUser._id, role: newUser.role, email: newUser.email },
@@ -188,7 +229,7 @@ app.post('/api/v1/auth/register-student', (req, res) => {
 
 // Organizer Signup & Verification Request (Section 7: Organizer -> Pending University Verification)
 app.post('/api/v1/auth/register-organizer', (req, res) => {
-  const { name, universityId, email, department, designation, phone, reason, supportingInfo } = req.body;
+  const { name, universityId, email, department, designation, phone, reason, supportingInfo, password } = req.body;
   if (!name || !universityId || !email || !reason) {
     return res.status(400).json({
       success: false,
@@ -196,28 +237,20 @@ app.post('/api/v1/auth/register-organizer', (req, res) => {
     });
   }
 
-  const exists = dbUsers.find(
-    u =>
-      u.email.toLowerCase() === email.trim().toLowerCase() ||
-      (u.rollNumber && u.rollNumber.toLowerCase() === universityId.trim().toLowerCase())
-  );
-  if (exists) {
-    return res.status(409).json({
-      success: false,
-      message: 'An account with this Email or University ID already exists.'
-    });
-  }
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanId = universityId.trim().toUpperCase();
 
   const newUserId = `org-${Date.now()}`;
   const newUser = {
     _id: newUserId,
     name: name.trim(),
-    email: email.trim().toLowerCase(),
-    rollNumber: universityId.trim().toUpperCase(),
+    email: cleanEmail,
+    rollNumber: cleanId,
     department: department || 'Department of Computer Science & Applications (DCSA)',
     designation: designation || 'Faculty / Society Coordinator',
     role: 'organizer',
     organizerStatus: 'PENDING',
+    passwordHash: password ? String(password) : undefined,
     organization: department || 'DHSGSU Department Body',
     interests: ['Seminar', 'Workshop'],
     profileImage: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=250&q=80',
@@ -240,7 +273,21 @@ app.post('/api/v1/auth/register-organizer', (req, res) => {
     submittedAt: new Date().toISOString()
   };
 
-  dbUsers.push(newUser);
+  const existingIndex = dbUsers.findIndex(
+    u =>
+      u.email.toLowerCase() === cleanEmail ||
+      (u.rollNumber && u.rollNumber.toUpperCase() === cleanId)
+  );
+
+  if (existingIndex !== -1) {
+    dbUsers[existingIndex] = {
+      ...dbUsers[existingIndex],
+      ...newUser,
+      _id: dbUsers[existingIndex]._id
+    };
+  } else {
+    dbUsers.unshift(newUser);
+  }
   dbOrganizerRequests.unshift(newRequest);
 
   const token = jwt.sign(
@@ -251,7 +298,7 @@ app.post('/api/v1/auth/register-organizer', (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: 'Organizer verification request submitted. Organizer access will be activated after University Administrator approval.',
+    message: 'Your organizer verification is still pending.',
     data: { token, user: newUser, request: newRequest }
   });
 });

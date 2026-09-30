@@ -89,65 +89,76 @@ export const AuthView: React.FC<AuthViewProps> = ({
     setMode(newMode);
   };
 
-  const handleLogin = (e: React.FormEvent, isAdminLogin = false) => {
+  const handleLogin = async (e: React.FormEvent, isAdminLogin = false) => {
     e.preventDefault();
     clearErrors();
 
     if (!loginIdentifier.trim()) {
-      setErrorMsg('Please enter your University ID / Roll Number or Campus Email.');
+      setErrorMsg('Account not found. Check your email or roll number.');
       return;
     }
     if (!loginPassword.trim()) {
-      setErrorMsg('Please enter your account password.');
+      setErrorMsg('Incorrect password.');
       return;
     }
 
     setIsLoading(true);
-    setTimeout(() => {
-      const res = loginWithCredentials(loginIdentifier, loginPassword, isAdminLogin);
+    try {
+      const res = await loginWithCredentials(loginIdentifier, loginPassword, isAdminLogin);
       setIsLoading(false);
 
       if (res.success) {
-        showToast(
-          'success',
-          `Authenticated as ${res.data.name} (${res.data.role.toUpperCase()})`,
-          'Welcome to PARISAR'
-        );
+        if (res.data.role === 'organizer' && res.data.organizerStatus === 'PENDING') {
+          showToast(
+            'info',
+            'Your organizer verification is still pending.',
+            'Organizer Verification Pending'
+          );
+        } else {
+          showToast(
+            'success',
+            `Signed in as ${res.data.name}`,
+            'Welcome to PARISAR'
+          );
+        }
         onSuccess(res.data);
       } else {
         setErrorMsg(res.error.message);
       }
-    }, 350);
+    } catch {
+      setIsLoading(false);
+      setErrorMsg('Account not found. Check your email or roll number.');
+    }
   };
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     clearErrors();
 
     if (!fullName.trim() || !universityId.trim() || !email.trim()) {
-      setErrorMsg('Full Name, University ID / Roll Number, and Campus Email are mandatory.');
+      setErrorMsg('Full Name, Roll Number / University ID, and University Email are mandatory.');
       return;
     }
 
-    if (password.length < 6) {
-      setErrorMsg('Password must be at least 6 characters long.');
+    if (password.length < 4) {
+      setErrorMsg('Password must be at least 4 characters long.');
       return;
     }
 
     if (password !== confirmPassword) {
-      setErrorMsg('Passwords do not match. Please verify your password confirmation.');
+      setErrorMsg('Passwords do not match.');
       return;
     }
 
     if (signupRole === 'organizer' && !reason.trim()) {
-      setErrorMsg('Please state your official reason for requesting organizer access at DHSGSU.');
+      setErrorMsg('Please provide your reason for requesting organizer access.');
       return;
     }
 
     setIsLoading(true);
-    setTimeout(() => {
+    try {
       if (signupRole === 'student') {
-        const res = registerStudentAccount({
+        const res = await registerStudentAccount({
           name: fullName,
           rollNumber: universityId,
           email,
@@ -172,7 +183,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           ? `${reason.trim()} [Ref: ${supportingDoc.trim()}]`
           : reason.trim();
 
-        const res = registerOrganizerAccount({
+        const res = await registerOrganizerAccount({
           name: fullName,
           universityId,
           email,
@@ -187,7 +198,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
         if (res.success) {
           showToast(
             'info',
-            'Your request has been submitted for university verification. Organizer access will be available after approval.',
+            'Your organizer verification is still pending.',
             'Organizer Verification Pending'
           );
           onSuccess(res.data);
@@ -195,7 +206,10 @@ export const AuthView: React.FC<AuthViewProps> = ({
           setErrorMsg(res.error.message);
         }
       }
-    }, 450);
+    } catch {
+      setIsLoading(false);
+      setErrorMsg('Unable to create account right now. Please try again.');
+    }
   };
 
   const handleForgotPassword = (e: React.FormEvent) => {
