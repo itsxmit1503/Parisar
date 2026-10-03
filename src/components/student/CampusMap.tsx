@@ -33,7 +33,6 @@ const FILTER_CATEGORIES: FilterCategory[] = [
   'Sports',
   'Hostel',
   'Medical',
-  'Food',
 ];
 
 const CATEGORY_COLORS: Record<CampusLocationCategory, { bg: string; text: string; border: string; pinHex: string }> = {
@@ -164,6 +163,8 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
 
       return (
         loc.name.toLowerCase().includes(q) ||
+        (loc.secondaryName && loc.secondaryName.toLowerCase().includes(q)) ||
+        (loc.plusCode && loc.plusCode.toLowerCase().includes(q)) ||
         loc.category.toLowerCase().includes(q) ||
         loc.description.toLowerCase().includes(q) ||
         loc.address.toLowerCase().includes(q) ||
@@ -405,11 +406,16 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
 
       if (isSelected && infoWindowRef.current) {
         infoWindowRef.current.setContent(
-          `<div style="font-family:sans-serif;padding:4px 6px;max-width:220px;">
+          `<div style="font-family:sans-serif;padding:4px 6px;max-width:240px;">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#B6533C;letter-spacing:0.05em;">${loc.category}</div>
             <div style="font-size:13px;font-weight:700;color:#18212B;margin-top:2px;">${loc.name}</div>
+            ${
+              loc.secondaryName
+                ? `<div style="font-size:11px;font-weight:600;color:#213B5C;margin-top:1px;">${loc.secondaryName}</div>`
+                : ''
+            }
             <div style="font-size:11px;color:#62605B;margin-top:2px;">${
-              eventCount > 0 ? `${eventCount} upcoming event${eventCount > 1 ? 's' : ''}` : 'DHSGSU Campus Location'
+              eventCount > 0 ? `${eventCount} upcoming event${eventCount > 1 ? 's' : ''}` : loc.address
             }</div>
           </div>`
         );
@@ -473,7 +479,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[2px] text-[10px] font-bold uppercase tracking-wider bg-[#ECF6F0] text-[#1E633F] border border-[#A8D5BC]">
           <span className="w-1.5 h-1.5 rounded-full bg-[#1E633F]" />
-          Verified GIS Pin
+          Verified Google Maps Pin
         </span>
       );
     }
@@ -486,8 +492,8 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[2px] text-[10px] font-bold uppercase tracking-wider bg-[#EAE5DB] text-[#62605B] border border-[#B9B4AA]">
-        Directory Entry • No Individual GIS Pin
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[2px] text-[10px] font-bold uppercase tracking-wider bg-[#FDF0F0] text-[#9E2A2B] border border-[#E5B3B4]">
+        Location verification required
       </span>
     );
   };
@@ -725,11 +731,18 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
               <div className="absolute bottom-3 left-3 right-3 sm:right-auto sm:max-w-sm bg-[#FCFAF5]/95 backdrop-blur-xs border border-[#18212B] rounded-[3px] p-2.5 shadow-[2px_2px_0_0_#18212B] flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-[#B6533C]">
-                    Active Pin • {selectedLocation.category}
+                    {selectedLocation.latitude !== null && selectedLocation.longitude !== null
+                      ? `Active Pin • ${selectedLocation.category}`
+                      : `Location Verification Required • ${selectedLocation.category}`}
                   </div>
                   <div className="text-xs font-bold text-[#18212B] truncate">
                     {selectedLocation.name}
                   </div>
+                  {selectedLocation.secondaryName && (
+                    <div className="text-[11px] font-semibold text-[#213B5C] truncate">
+                      {selectedLocation.secondaryName}
+                    </div>
+                  )}
                   <div className="text-[11px] text-[#62605B] truncate">
                     {selectedVenueEvents.length > 0
                       ? `${selectedVenueEvents.length} upcoming event${selectedVenueEvents.length > 1 ? 's' : ''} here`
@@ -853,6 +866,11 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
                 <h2 className="text-lg sm:text-xl font-bold text-[#18212B] leading-snug">
                   {selectedLocation.name}
                 </h2>
+                {selectedLocation.secondaryName && (
+                  <div className="text-xs sm:text-sm font-bold text-[#213B5C] mt-0.5">
+                    {selectedLocation.secondaryName}
+                  </div>
+                )}
                 <p className="text-xs text-[#62605B] mt-1">{selectedLocation.address}</p>
 
                 {/* Primary & Secondary Navigation Actions (Section 10 & 13) */}
@@ -894,10 +912,20 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
                       </span>
                       <span className="font-mono font-bold text-[#18212B]">
                         {selectedLocation.latitude !== null && selectedLocation.longitude !== null
-                          ? `${selectedLocation.latitude.toFixed(6)}° N, ${selectedLocation.longitude.toFixed(6)}° E`
-                          : 'Unverified Pin (Uses Campus Search)'}
+                          ? `${selectedLocation.latitude.toFixed(7)}° N, ${selectedLocation.longitude.toFixed(7)}° E`
+                          : 'Location verification required'}
                       </span>
                     </div>
+                    {selectedLocation.plusCode && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-bold text-[#62605B] uppercase tracking-wider">
+                          Google Plus Code:
+                        </span>
+                        <span className="font-mono font-bold text-[#213B5C]">
+                          {selectedLocation.plusCode} • Sagar, MP
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-start justify-between gap-2">
                       <span className="font-bold text-[#62605B] uppercase tracking-wider shrink-0">
                         GIS Source:
@@ -977,7 +1005,7 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
                 DHSGSU Campus Directory ({filteredLocations.length})
               </h3>
               <span className="text-[11px] text-[#62605B]">
-                {mappedPinLocations.length} pinned • {filteredLocations.length - mappedPinLocations.length} directory
+                {mappedPinLocations.length} pinned • {filteredLocations.length - mappedPinLocations.length} unverified
               </span>
             </div>
 
@@ -1007,14 +1035,19 @@ export const CampusMap: React.FC<CampusMapProps> = ({ initialVenueId, onOpenEven
                             {loc.category}
                           </span>
                           {!hasCoords && (
-                            <span className="text-[10px] px-1.5 py-0.2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-[#62605B]">
-                              Directory Search
+                            <span className="text-[10px] px-1.5 py-0.2 bg-[#FDF0F0] border border-[#E5B3B4] rounded-[2px] text-[#9E2A2B] font-bold">
+                              Location verification required
                             </span>
                           )}
                         </div>
                         <div className="text-xs sm:text-sm font-bold text-[#18212B] truncate">
                           {loc.name}
                         </div>
+                        {loc.secondaryName && (
+                          <div className="text-[11px] font-semibold text-[#213B5C] truncate">
+                            {loc.secondaryName}
+                          </div>
+                        )}
                         <div className="text-[11px] text-[#62605B] truncate mt-0.5">
                           {loc.address}
                         </div>

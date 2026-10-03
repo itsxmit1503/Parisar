@@ -37,12 +37,12 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const { venues, createEvent } = useApp();
   const { showToast } = useToast();
 
-  const eventVenues = venues.filter(v => v.isEventVenue !== false);
+  const eventVenues = venues.filter(v => v.isEventVenue !== false && v.latitude !== null && v.longitude !== null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<EventCategory>('Workshop');
-  const [venueId, setVenueId] = useState('venue-swarna-jayanti');
+  const [venueId, setVenueId] = useState('venue-abhimanch');
   const [date, setDate] = useState('2026-10-15');
   const [startTime, setStartTime] = useState('10:00');
   const [endTime, setEndTime] = useState('13:00');

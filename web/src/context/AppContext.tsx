@@ -132,6 +132,7 @@ function mergeUsersList(serverUsers: User[], clientUsers: User[]): User[] {
 
 const LEGACY_VENUE_ID_MAP: Record<string, string> = {
   'venue-tagore-mandapam': 'venue-abhimanch',
+  'venue-swarna-jayanti': 'venue-abhimanch',
   'venue-iic': 'venue-central-library',
   'venue-cv-raman': 'venue-geography-dept',
   'venue-sports-complex': 'venue-stadium',
@@ -140,13 +141,15 @@ const LEGACY_VENUE_ID_MAP: Record<string, string> = {
 
 function normalizeEventVenues(eventsList: CampusEvent[]): CampusEvent[] {
   return eventsList.map(evt => {
-    const mappedId = LEGACY_VENUE_ID_MAP[evt.venueId] || evt.venueId;
+    const seedEvt = INITIAL_EVENTS.find(se => se._id === evt._id);
+    const mappedId = seedEvt ? seedEvt.venueId : (LEGACY_VENUE_ID_MAP[evt.venueId] || evt.venueId);
     const matchedVenue = CAMPUS_VENUES.find(v => v.id === mappedId);
     if (matchedVenue) {
       return {
         ...evt,
         venueId: matchedVenue.id,
         venue: matchedVenue.name,
+        description: seedEvt ? seedEvt.description : evt.description,
       };
     }
     return evt;

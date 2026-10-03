@@ -60,6 +60,9 @@ export const VenueCategorySettings: React.FC = () => {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h3 className="text-base font-bold text-[#18212B]">{venue.name}</h3>
+                    {venue.secondaryName && (
+                      <div className="text-xs font-bold text-[#213B5C] mt-0.5">{venue.secondaryName}</div>
+                    )}
                     <div className="text-xs text-[#62605B] mt-0.5">{venue.address}</div>
                   </div>
                   <Badge variant="default">{venue.category}</Badge>
@@ -71,17 +74,25 @@ export const VenueCategorySettings: React.FC = () => {
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-[#18212B]">Verification Status:</span>
                     <span className="font-mono text-[11px] uppercase font-bold text-[#B6533C]">
-                      {venue.verified}
+                      {venue.verified === 'unverified' ? 'Location verification required' : venue.verified}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-[#18212B]">WGS84 Coordinates:</span>
                     <span className="font-mono text-[11px] text-[#62605B]">
                       {hasCoordinates
-                        ? `${venue.latitude!.toFixed(6)}° N, ${venue.longitude!.toFixed(6)}° E`
-                        : 'Unverified Pin (Directory Search)'}
+                        ? `${venue.latitude!.toFixed(7)}° N, ${venue.longitude!.toFixed(7)}° E`
+                        : 'Location verification required'}
                     </span>
                   </div>
+                  {venue.plusCode && (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-[#18212B]">Google Plus Code:</span>
+                      <span className="font-mono text-[11px] text-[#213B5C] font-bold">
+                        {venue.plusCode} • Sagar, MP
+                      </span>
+                    </div>
+                  )}
                   <div className="text-[11px] text-[#62605B] pt-1 border-t border-[#D5D0C5]">
                     <span className="font-bold text-[#18212B]">Source: </span>
                     {venue.source}

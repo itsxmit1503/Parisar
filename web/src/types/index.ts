@@ -79,6 +79,8 @@ export type VerificationStatus = 'verified' | 'partially_verified' | 'unverified
 export interface CampusVenue {
   id: string;
   name: string;
+  secondaryName?: string;
+  plusCode?: string;
   category: CampusLocationCategory;
   latitude: number | null;
   longitude: number | null;
