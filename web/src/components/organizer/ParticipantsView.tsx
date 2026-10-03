@@ -22,7 +22,7 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
   initialEventId,
   onNavigateToScanner,
 }) => {
-  const { events, registrations, verifyAndCheckIn } = useApp();
+  const { events, registrations, attendance, verifyAndCheckIn } = useApp();
   const { showToast } = useToast();
 
   const [selectedEventId, setSelectedEventId] = useState<string>(
@@ -32,8 +32,18 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
   const [statusFilter, setStatusFilter] = useState<'all' | 'checkedIn' | 'pending'>('all');
 
   const currentEvent = events.find(e => e._id === selectedEventId) || events[0];
+  const minThreshold = currentEvent?.minParticipationPercent ?? 80;
+  const totalEventMins = currentEvent
+    ? Math.max(
+        15,
+        Math.round(
+          (new Date(currentEvent.endTime).getTime() - new Date(currentEvent.startTime).getTime()) / 60000
+        )
+      )
+    : 60;
 
   const eventRegs = registrations.filter(r => r.eventId === selectedEventId && r.status === 'CONFIRMED');
+  const eventAtt = attendance.filter(a => a.eventId === selectedEventId);
 
   const filteredRegs = eventRegs.filter(reg => {
     const isCheckedIn = Boolean(reg.checkedInAt);
@@ -64,16 +74,36 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
   };
 
   const handleExportCSV = () => {
-    const headers = ['Name', 'Roll Number', 'Department', 'Email', 'Registered At', 'Checked In At', 'Token'];
-    const rows = eventRegs.map(r => [
-      `"${r.userName}"`,
-      `"${r.userRollNumber}"`,
-      `"${r.userDepartment}"`,
-      `"${r.userEmail}"`,
-      `"${r.registeredAt}"`,
-      `"${r.checkedInAt || 'Not Checked In'}"`,
-      `"${r.qrToken}"`,
-    ]);
+    const headers = [
+      'Name',
+      'Roll Number',
+      'Department',
+      'Email',
+      'Registered At',
+      'Checked In At',
+      'Participation Minutes',
+      'Participation Percent',
+      'Certificate Eligible',
+      'Token',
+    ];
+    const rows = eventRegs.map(r => {
+      const att = eventAtt.find(a => a.userId === r.userId);
+      const pMins = att ? (att.participatedMinutes ?? totalEventMins) : 0;
+      const pPct = att ? (att.participationPercent ?? 100) : 0;
+      const eligible = att ? (att.eligibleForCertificate ?? pPct >= minThreshold) : false;
+      return [
+        `"${r.userName}"`,
+        `"${r.userRollNumber}"`,
+        `"${r.userDepartment}"`,
+        `"${r.userEmail}"`,
+        `"${r.registeredAt}"`,
+        `"${r.checkedInAt || 'Not Checked In'}"`,
+        `"${pMins}/${totalEventMins} mins"`,
+        `"${pPct}%"`,
+        `"${eligible ? 'ELIGIBLE' : 'NOT ELIGIBLE'}"`,
+        `"${r.qrToken}"`,
+      ];
+    });
 
     const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -99,7 +129,7 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
             Event Participant Roster
           </h1>
           <p className="text-xs text-[#62605B] mt-0.5">
-            View student registrations, manage manual override check-ins, and export verified records.
+            View student registrations, verify participation duration (min {minThreshold}% required), and export verified records.
           </p>
         </div>
 
@@ -122,7 +152,7 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
 
       {/* Summary Stats & Export Banner */}
       <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-6 text-xs font-mono">
+        <div className="flex flex-wrap items-center gap-6 text-xs font-mono">
           <div>
             <div className="text-[10px] uppercase font-bold text-[#62605B]">Registered</div>
             <div className="text-xl font-bold text-[#18212B]">{eventRegs.length} students</div>
@@ -137,6 +167,12 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
             <div className="text-[10px] uppercase font-bold text-[#62605B]">Pending Check-in</div>
             <div className="text-xl font-bold text-[#B08A4A]">
               {eventRegs.length - checkedInCount}
+            </div>
+          </div>
+          <div className="border-l border-[#B9B4AA] pl-6">
+            <div className="text-[10px] uppercase font-bold text-[#62605B]">Min Certificate Rule</div>
+            <div className="text-xl font-bold text-[#B6533C]">
+              ≥ {minThreshold}% ({Math.ceil((totalEventMins * minThreshold) / 100)}m)
             </div>
           </div>
         </div>
@@ -212,21 +248,26 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
 
       {/* Participants Structured Table */}
       {filteredRegs.length > 0 ? (
-        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] overflow-hidden shadow-[2px_2px_0_0_#18212B]">
-          <table className="w-full text-left text-xs">
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] overflow-hidden shadow-[2px_2px_0_0_#18212B] overflow-x-auto">
+          <table className="w-full text-left text-xs min-w-[760px]">
             <thead className="bg-[#EAE5DB] border-b border-[#B9B4AA] text-[#18212B] font-mono font-bold uppercase text-[10px] tracking-wider">
               <tr>
                 <th className="py-2.5 px-4">Attendee</th>
                 <th className="py-2.5 px-4">Roll Number</th>
                 <th className="py-2.5 px-4">Department</th>
                 <th className="py-2.5 px-4">Pass Token</th>
-                <th className="py-2.5 px-4">Verification</th>
+                <th className="py-2.5 px-4">Attendance & Duration</th>
+                <th className="py-2.5 px-4">Certificate Eligibility</th>
                 <th className="py-2.5 px-4 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#B9B4AA]/60">
               {filteredRegs.map(reg => {
                 const isCheckedIn = Boolean(reg.checkedInAt);
+                const att = eventAtt.find(a => a.userId === reg.userId);
+                const pMins = att ? (att.participatedMinutes ?? totalEventMins) : 0;
+                const pPct = att ? (att.participationPercent ?? Math.round((pMins / totalEventMins) * 100)) : 0;
+                const isEligible = att ? (att.eligibleForCertificate ?? pPct >= minThreshold) : false;
 
                 return (
                   <tr key={reg._id} className="hover:bg-[#EAE5DB]/40 transition-colors">
@@ -244,14 +285,31 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
                     </td>
                     <td className="py-3 px-4">
                       {isCheckedIn ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-[#2F613B] bg-[#EBF3ED] px-2 py-0.5 rounded-[2px] border border-[#2F613B]/30">
-                          <CheckCircle2 className="w-3 h-3 text-[#2F613B]" />
-                          Checked In
-                        </span>
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-[#2F613B] bg-[#EBF3ED] px-2 py-0.5 rounded-[2px] border border-[#2F613B]/30">
+                            <CheckCircle2 className="w-3 h-3 text-[#2F613B]" />
+                            Present ({pMins}/{totalEventMins}m • {pPct}%)
+                          </span>
+                        </div>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-[10px] font-mono text-[#62605B] bg-[#EAE5DB] px-2 py-0.5 rounded-[2px] border border-[#B9B4AA]">
-                          Awaiting Scan
+                          Registered Only (0%)
                         </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      {isCheckedIn ? (
+                        <span
+                          className={`inline-flex items-center text-[10px] font-mono font-bold px-2 py-0.5 rounded-[2px] border ${
+                            isEligible
+                              ? 'bg-[#EBF3ED] text-[#2F613B] border-[#2F613B]/30'
+                              : 'bg-[#FAF0E6] text-[#B08A4A] border-[#B08A4A]/40'
+                          }`}
+                        >
+                          {isEligible ? `Eligible (≥${minThreshold}%)` : `Ineligible (<${minThreshold}%)`}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono text-[#62605B]">Not Attended</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -285,3 +343,4 @@ export const ParticipantsView: React.FC<ParticipantsViewProps> = ({
     </div>
   );
 };
+

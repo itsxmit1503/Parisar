@@ -420,7 +420,13 @@ export function MainApp({ initialTab = 'landing' }: MainAppProps) {
         )}
 
         {effectiveTab === 'organizer-participants' && (
-          <ParticipantsView initialEventId={targetEventId} />
+          <ParticipantsView
+            initialEventId={targetEventId}
+            onNavigateToScanner={eId => {
+              setTargetEventId(eId);
+              setActiveTab('organizer-scanner');
+            }}
+          />
         )}
 
         {effectiveTab === 'organizer-certificates' && (
@@ -449,7 +455,7 @@ export function MainApp({ initialTab = 'landing' }: MainAppProps) {
         )}
 
         {effectiveTab === 'admin-moderation' && (
-          <EventModeration />
+          <EventModeration onOpenEventDetails={evt => setSelectedEventForDetail(evt)} />
         )}
 
         {(effectiveTab === 'admin-participants' || effectiveTab === 'admin-users') && (

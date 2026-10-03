@@ -1,16 +1,20 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   Users, 
   ShieldCheck, 
   ArrowRight,
   QrCode,
-  UserCheck
+  UserCheck,
+  Megaphone,
+  Building2,
+  FileSpreadsheet
 } from 'lucide-react';
 import { CategoryBadge, EventStatusBadge } from '../ui/Badge';
 import { Button } from '../ui/Button';
+import { useToast } from '../ui/Toast';
 
 interface AdminDashboardProps {
   onNavigateToOrganizerRequests: () => void;
@@ -27,27 +31,186 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onNavigateToModeration,
   onNavigateToParticipants,
   onNavigateToAttendance,
+  onNavigateToVenues,
+  onNavigateToAudit,
 }) => {
-  const { events, organizerRequests, registrations, attendance } = useApp();
+  const {
+    allUsers,
+    events,
+    organizerRequests,
+    registrations,
+    attendance,
+    certificates,
+    sendUniversityAnnouncement,
+  } = useApp();
+  const { showToast } = useToast();
+
+  const [showBroadcastForm, setShowBroadcastForm] = useState(false);
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastAudience, setBroadcastAudience] = useState<'ALL' | 'STUDENTS' | 'ORGANIZERS'>('ALL');
 
   const pendingOrgRequests = organizerRequests.filter(r => r.status === 'PENDING');
   const pendingEvents = events.filter(e => e.status === 'PENDING_REVIEW');
+  const publishedOrOngoingEvents = events.filter(
+    e => e.status === 'PUBLISHED' || e.status === 'APPROVED' || e.status === 'ONGOING'
+  );
+  const completedEvents = events.filter(e => e.status === 'COMPLETED');
+  const totalStudents = allUsers.filter(u => u.role === 'student').length;
+  const verifiedOrganizers = allUsers.filter(u => u.role === 'organizer' && u.organizerStatus === 'VERIFIED').length;
   const totalConfirmedRegs = registrations.filter(r => r.status === 'CONFIRMED').length;
+
+  const handleBroadcastSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = sendUniversityAnnouncement(broadcastTitle, broadcastMessage, broadcastAudience);
+    if (res.success) {
+      showToast(
+        'success',
+        `Official DHSGSU notice dispatched to ${res.data} ${broadcastAudience.toLowerCase()} accounts.`,
+        'University Broadcast Sent'
+      );
+      setBroadcastTitle('');
+      setBroadcastMessage('');
+      setShowBroadcastForm(false);
+    } else {
+      showToast('error', res.error?.message || 'Unable to send broadcast.', 'Broadcast Error');
+    }
+  };
 
   return (
     <div className="max-w-5xl mx-auto space-y-8 pb-24 lg:pb-16">
-      {/* 1. Admin Dashboard Title */}
-      <div className="space-y-1 pt-1">
-        <div className="text-xs font-mono font-bold uppercase tracking-widest text-[#B6533C]">
-          PARISAR · DHSGSU
+      {/* 1. Admin Dashboard Title & Broadcast CTA */}
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pt-1">
+        <div className="space-y-1">
+          <div className="text-xs font-mono font-bold uppercase tracking-widest text-[#B6533C]">
+            PARISAR · DHSGSU PROCTORIAL & DSW AUTHORITY
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
+            Admin Dashboard
+          </h1>
+          <p className="text-sm sm:text-base text-[#62605B]">
+            University-wide event authorization, organizer verification, and campus governance.
+          </p>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
-          Admin Dashboard
-        </h1>
-        <p className="text-sm sm:text-base text-[#62605B]">
-          Needs your attention
-        </p>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          leftIcon={<Megaphone className="w-4 h-4 text-[#B6533C]" />}
+          onClick={() => setShowBroadcastForm(!showBroadcastForm)}
+        >
+          {showBroadcastForm ? 'Close Broadcast' : 'University Broadcast'}
+        </Button>
       </div>
+
+      {/* University-Wide Announcement Broadcast Panel */}
+      {showBroadcastForm && (
+        <form
+          onSubmit={handleBroadcastSubmit}
+          className="bg-[#FCFAF5] border-2 border-[#18212B] rounded-[4px] p-5 shadow-[3px_3px_0_0_#18212B] space-y-4"
+        >
+          <div className="flex items-center justify-between border-b border-[#B9B4AA] pb-2.5">
+            <div>
+              <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#B6533C]">
+                DSW Official Circular
+              </span>
+              <h3 className="text-base font-extrabold text-[#18212B]">
+                Dispatch University-Wide Announcement
+              </h3>
+            </div>
+            <select
+              value={broadcastAudience}
+              onChange={e => setBroadcastAudience(e.target.value as 'ALL' | 'STUDENTS' | 'ORGANIZERS')}
+              className="px-2.5 py-1 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-mono font-bold text-[#18212B]"
+            >
+              <option value="ALL">Target: All Campus Users</option>
+              <option value="STUDENTS">Target: Students Only</option>
+              <option value="ORGANIZERS">Target: Organizers Only</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 text-xs">
+            <div>
+              <label className="block text-[10px] font-mono font-bold uppercase text-[#18212B] mb-1">
+                Circular Subject / Title *
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Revised Proctorial Guidelines for Gour Jayanti Week"
+                value={broadcastTitle}
+                onChange={e => setBroadcastTitle(e.target.value)}
+                className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] font-bold text-[#18212B] focus:outline-none focus:border-[#18212B]"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-mono font-bold uppercase text-[#18212B] mb-1">
+                Official Circular Message *
+              </label>
+              <textarea
+                rows={3}
+                required
+                placeholder="Enter official university notice to be delivered to campus notification inboxes..."
+                value={broadcastMessage}
+                onChange={e => setBroadcastMessage(e.target.value)}
+                className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-[#18212B] focus:outline-none focus:border-[#18212B]"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setShowBroadcastForm(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" leftIcon={<Megaphone className="w-3.5 h-3.5" />}>
+              Publish Official Broadcast
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {/* Live University Governance Metrics Strip */}
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-3.5 shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">Campus Accounts</div>
+          <div className="text-xl font-extrabold text-[#18212B] font-mono mt-0.5">
+            {totalStudents} Students
+          </div>
+          <div className="text-[11px] text-[#2F613B] font-mono font-bold mt-0.5">
+            {verifiedOrganizers} Verified Organizers
+          </div>
+        </div>
+
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-3.5 shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">Active Events</div>
+          <div className="text-xl font-extrabold text-[#18212B] font-mono mt-0.5">
+            {publishedOrOngoingEvents.length} Live / Open
+          </div>
+          <div className="text-[11px] text-[#62605B] font-mono mt-0.5">
+            {completedEvents.length} Completed · {events.length} Total
+          </div>
+        </div>
+
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-3.5 shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">Registrations</div>
+          <div className="text-xl font-extrabold text-[#18212B] font-mono mt-0.5">
+            {totalConfirmedRegs} Passes
+          </div>
+          <div className="text-[11px] text-[#2F613B] font-mono font-bold mt-0.5">
+            {attendance.length} Verified Check-ins
+          </div>
+        </div>
+
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-3.5 shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">Credentials</div>
+          <div className="text-xl font-extrabold text-[#B08A4A] font-mono mt-0.5">
+            {certificates.length} Issued
+          </div>
+          <div className="text-[11px] text-[#62605B] font-mono mt-0.5">
+            ≥80% Rule Enforced
+          </div>
+        </div>
+      </section>
 
       {/* 2. Needs Your Attention: Organizer Requests & Events Pending Review */}
       <section className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -168,38 +331,71 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </section>
 
-      {/* 4. Participants & Attendance */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* 4. Administrative Operations & Oversight Links */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <button
           onClick={onNavigateToParticipants}
-          className="p-5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-4 cursor-pointer touch-manipulation"
+          className="p-4 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-3 cursor-pointer touch-manipulation"
         >
           <div className="space-y-1">
-            <div className="text-base font-extrabold text-[#18212B]">Participants</div>
-            <div className="text-xs sm:text-sm text-[#62605B]">
-              {totalConfirmedRegs} registered participants
+            <div className="text-sm font-extrabold text-[#18212B]">User Directory</div>
+            <div className="text-xs text-[#62605B]">
+              {allUsers.length} campus accounts
             </div>
           </div>
-          <div className="w-10 h-10 rounded-[3px] bg-[#EAE5DB] text-[#18212B] border border-[#B9B4AA] flex items-center justify-center shrink-0">
-            <Users className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-[3px] bg-[#EAE5DB] text-[#18212B] border border-[#B9B4AA] flex items-center justify-center shrink-0">
+            <Users className="w-4 h-4" />
           </div>
         </button>
 
         <button
           onClick={onNavigateToAttendance}
-          className="p-5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-4 cursor-pointer touch-manipulation"
+          className="p-4 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-3 cursor-pointer touch-manipulation"
         >
           <div className="space-y-1">
-            <div className="text-base font-extrabold text-[#18212B]">Attendance</div>
-            <div className="text-xs sm:text-sm text-[#62605B]">
+            <div className="text-sm font-extrabold text-[#18212B]">Attendance Ledger</div>
+            <div className="text-xs text-[#62605B]">
               {attendance.length} verified check-ins
             </div>
           </div>
-          <div className="w-10 h-10 rounded-[3px] bg-[#EAE5DB] text-[#2F613B] border border-[#B9B4AA] flex items-center justify-center shrink-0">
-            <QrCode className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-[3px] bg-[#EAE5DB] text-[#2F613B] border border-[#B9B4AA] flex items-center justify-center shrink-0">
+            <QrCode className="w-4 h-4" />
           </div>
         </button>
+
+        <button
+          onClick={onNavigateToVenues}
+          className="p-4 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-3 cursor-pointer touch-manipulation"
+        >
+          <div className="space-y-1">
+            <div className="text-sm font-extrabold text-[#18212B]">Venues & Categories</div>
+            <div className="text-xs text-[#62605B]">
+              DHSGSU POIs & rules
+            </div>
+          </div>
+          <div className="w-9 h-9 rounded-[3px] bg-[#EAE5DB] text-[#B6533C] border border-[#B9B4AA] flex items-center justify-center shrink-0">
+            <Building2 className="w-4 h-4" />
+          </div>
+        </button>
+
+        {onNavigateToAudit && (
+          <button
+            onClick={onNavigateToAudit}
+            className="p-4 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-3 cursor-pointer touch-manipulation"
+          >
+            <div className="space-y-1">
+              <div className="text-sm font-extrabold text-[#18212B]">Audit Trail</div>
+              <div className="text-xs text-[#62605B]">
+                Immutable system logs
+              </div>
+            </div>
+            <div className="w-9 h-9 rounded-[3px] bg-[#EAE5DB] text-[#B08A4A] border border-[#B9B4AA] flex items-center justify-center shrink-0">
+              <FileSpreadsheet className="w-4 h-4" />
+            </div>
+          </button>
+        )}
       </section>
     </div>
   );
 };
+

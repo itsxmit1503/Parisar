@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CampusEvent, EventStatus } from '../../types';
-import { Search } from 'lucide-react';
+import { Search, AlertTriangle } from 'lucide-react';
 import { CategoryBadge, EventStatusBadge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import { useToast } from '../ui/Toast';
@@ -13,11 +13,13 @@ interface EventModerationProps {
 }
 
 export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDetails }) => {
-  const { events, adminModerateEvent } = useApp();
+  const { events, adminModerateEvent, getEventConflicts } = useApp();
   const { showToast } = useToast();
 
   const [statusFilter, setStatusFilter] = useState<'ALL' | EventStatus>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [rejectingEventId, setRejectingEventId] = useState<string | null>(null);
+  const [rejectionNote, setRejectionNote] = useState('');
 
   const filteredEvents = events.filter(e => {
     if (statusFilter !== 'ALL' && e.status !== statusFilter) return false;
@@ -32,16 +34,20 @@ export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDet
     return true;
   });
 
-  const handleStatusChange = (eventId: string, title: string, newStatus: EventStatus) => {
-    const res = adminModerateEvent(eventId, newStatus);
+  const handleStatusChange = (eventId: string, title: string, newStatus: EventStatus, reason?: string) => {
+    const res = adminModerateEvent(eventId, newStatus, reason);
     if (res.success) {
       if (newStatus === 'PUBLISHED') {
         showToast('success', `"${title}" has been approved and published to the student portal.`, 'Event Approved');
       } else if (newStatus === 'REJECTED') {
-        showToast('error', `"${title}" proposal has been rejected.`, 'Event Rejected');
+        showToast('error', `"${title}" proposal has been returned/rejected.`, 'Event Rejected');
+        setRejectingEventId(null);
+        setRejectionNote('');
       } else {
         showToast('info', `Status of "${title}" changed to ${newStatus}.`, 'Event Updated');
       }
+    } else {
+      showToast('error', res.error?.message || 'Unable to change event status.', 'Schedule Conflict / Error');
     }
   };
 
@@ -56,7 +62,7 @@ export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDet
           Campus Event Authorization & Management
         </h1>
         <p className="text-xs text-[#62605B] mt-0.5">
-          Review submitted event proposals, authorize official university events, and manage status across DHSGSU.
+          Review submitted event proposals, detect venue schedule conflicts, and authorize official university events across DHSGSU.
         </p>
       </div>
 
@@ -74,7 +80,7 @@ export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDet
         </div>
 
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {(['ALL', 'PENDING_REVIEW', 'PUBLISHED', 'DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'] as const).map(st => (
+          {(['ALL', 'PENDING_REVIEW', 'PUBLISHED', 'ONGOING', 'DRAFT', 'REJECTED', 'COMPLETED', 'CANCELLED'] as const).map(st => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -92,98 +98,168 @@ export const EventModeration: React.FC<EventModerationProps> = ({ onOpenEventDet
 
       {/* Moderation Table */}
       <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] overflow-hidden shadow-[2px_2px_0_0_#18212B] overflow-x-auto">
-        <table className="w-full text-left text-xs min-w-[700px]">
+        <table className="w-full text-left text-xs min-w-[780px]">
           <thead className="bg-[#EAE5DB] border-b border-[#B9B4AA] text-[#18212B] font-mono text-[11px] uppercase tracking-wider">
             <tr>
-              <th className="py-3 px-4 font-bold">Event Details</th>
+              <th className="py-3 px-4 font-bold">Event Details & Policy</th>
               <th className="py-3 px-4 font-bold">Organizer</th>
-              <th className="py-3 px-4 font-bold">Venue & Schedule</th>
+              <th className="py-3 px-4 font-bold">Venue & Schedule Check</th>
               <th className="py-3 px-4 font-bold">Current Status</th>
               <th className="py-3 px-4 text-right font-bold">Administrative Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#B9B4AA]/50">
-            {filteredEvents.map(evt => (
-              <tr key={evt._id} className="hover:bg-[#EAE5DB]/40 transition-colors">
-                <td className="py-3 px-4 max-w-xs">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <CategoryBadge category={evt.category} />
-                  </div>
-                  <div 
-                    onClick={() => onOpenEventDetails?.(evt)}
-                    className="font-bold text-[#18212B] line-clamp-1 cursor-pointer hover:text-[#B6533C] hover:underline"
-                  >
-                    {evt.title}
-                  </div>
-                  <div className="text-[11px] text-[#62605B] line-clamp-1 mt-0.5">{evt.description}</div>
-                </td>
+            {filteredEvents.map(evt => {
+              const conflicts = getEventConflicts(evt.venueId, evt.startTime, evt.endTime, evt._id);
+              const isRejecting = rejectingEventId === evt._id;
 
-                <td className="py-3 px-4">
-                  <div className="font-bold text-[#18212B]">{evt.organizerName}</div>
-                  <div className="text-[11px] text-[#62605B]">{evt.organizerEmail}</div>
-                </td>
-
-                <td className="py-3 px-4 text-[#62605B]">
-                  <div className="font-bold text-[#18212B]">{evt.venue}</div>
-                  <div className="text-[11px] font-mono text-[#62605B]">
-                    {new Date(evt.startTime).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {new Date(evt.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-                  </div>
-                </td>
-
-                <td className="py-3 px-4">
-                  <EventStatusBadge status={evt.status} />
-                </td>
-
-                <td className="py-3 px-4 text-right">
-                  <div className="flex items-center justify-end gap-1.5">
-                    {(evt.status === 'PENDING_REVIEW' || evt.status === 'DRAFT' || evt.status === 'REJECTED') && (
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => handleStatusChange(evt._id, evt.title, 'PUBLISHED')}
+              return (
+                <React.Fragment key={evt._id}>
+                  <tr className="hover:bg-[#EAE5DB]/40 transition-colors">
+                    <td className="py-3 px-4 max-w-xs">
+                      <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                        <CategoryBadge category={evt.category} />
+                        <span className="px-1.5 py-0.5 rounded-[2px] bg-[#EAE5DB] border border-[#B9B4AA] text-[10px] font-mono font-bold text-[#18212B]">
+                          {evt.eventMode || 'OFFLINE'}
+                        </span>
+                        {evt.certificateRequired !== false && (
+                          <span className="px-1.5 py-0.5 rounded-[2px] bg-[#FAF0E6] border border-[#B08A4A]/40 text-[10px] font-mono font-bold text-[#B08A4A]">
+                            Cert ≥{evt.minParticipationPercent ?? 80}%
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        onClick={() => onOpenEventDetails?.(evt)}
+                        className="font-bold text-[#18212B] line-clamp-1 cursor-pointer hover:text-[#B6533C] hover:underline"
                       >
-                        Approve
-                      </Button>
-                    )}
+                        {evt.title}
+                      </div>
+                      <div className="text-[11px] text-[#62605B] line-clamp-1 mt-0.5">{evt.description}</div>
+                      {evt.rejectionReason && (
+                        <div className="text-[10px] font-mono text-[#A83226] mt-1">
+                          Rejected Note: {evt.rejectionReason}
+                        </div>
+                      )}
+                    </td>
 
-                    {(evt.status === 'PENDING_REVIEW' || evt.status === 'DRAFT') && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-[#A83226] border-[#A83226]"
-                        onClick={() => handleStatusChange(evt._id, evt.title, 'REJECTED')}
-                      >
-                        Reject
-                      </Button>
-                    )}
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-[#18212B]">{evt.organizerName}</div>
+                      <div className="text-[11px] text-[#62605B]">{evt.organizerEmail}</div>
+                    </td>
 
-                    {(evt.status === 'PUBLISHED' || evt.status === 'APPROVED') && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleStatusChange(evt._id, evt.title, 'COMPLETED')}
-                      >
-                        Complete
-                      </Button>
-                    )}
+                    <td className="py-3 px-4 text-[#62605B]">
+                      <div className="font-bold text-[#18212B]">{evt.venue}</div>
+                      <div className="text-[11px] font-mono text-[#62605B]">
+                        {new Date(evt.startTime).toLocaleDateString([], { month: 'short', day: 'numeric' })} •{' '}
+                        {new Date(evt.startTime).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                      </div>
+                      {conflicts.length > 0 && (
+                        <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-[2px] bg-[#FBEAEA] border border-[#A83226]/40 text-[10px] font-mono font-bold text-[#A83226]">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          Overlap: {conflicts[0].title}
+                        </div>
+                      )}
+                    </td>
 
-                    {evt.status !== 'CANCELLED' && evt.status !== 'REJECTED' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-[#A83226] hover:bg-[#FBEAEA]"
-                        onClick={() => handleStatusChange(evt._id, evt.title, 'CANCELLED')}
-                      >
-                        Cancel
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
+                    <td className="py-3 px-4">
+                      <EventStatusBadge status={evt.status} />
+                    </td>
+
+                    <td className="py-3 px-4 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {(evt.status === 'PENDING_REVIEW' || evt.status === 'DRAFT' || evt.status === 'REJECTED') && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleStatusChange(evt._id, evt.title, 'PUBLISHED')}
+                          >
+                            Approve
+                          </Button>
+                        )}
+
+                        {(evt.status === 'PENDING_REVIEW' || evt.status === 'DRAFT') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-[#A83226] border-[#A83226]"
+                            onClick={() => {
+                              setRejectingEventId(isRejecting ? null : evt._id);
+                              setRejectionNote(evt.rejectionReason || '');
+                            }}
+                          >
+                            Reject
+                          </Button>
+                        )}
+
+                        {(evt.status === 'PUBLISHED' || evt.status === 'APPROVED' || evt.status === 'ONGOING') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleStatusChange(evt._id, evt.title, 'COMPLETED')}
+                          >
+                            Complete
+                          </Button>
+                        )}
+
+                        {evt.status !== 'CANCELLED' && evt.status !== 'REJECTED' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-[#A83226] hover:bg-[#FBEAEA]"
+                            onClick={() => handleStatusChange(evt._id, evt.title, 'CANCELLED')}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+
+                  {isRejecting && (
+                    <tr className="bg-[#FBEAEA]/60">
+                      <td colSpan={5} className="px-4 py-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <input
+                            type="text"
+                            placeholder="Provide administrative reason for returning/rejecting this event proposal..."
+                            value={rejectionNote}
+                            onChange={e => setRejectionNote(e.target.value)}
+                            className="flex-1 px-3 py-1.5 bg-[#FCFAF5] border border-[#A83226] rounded-[2px] text-xs text-[#18212B] focus:outline-none"
+                          />
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setRejectingEventId(null)}
+                            >
+                              Cancel
+                            </Button>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() =>
+                                handleStatusChange(
+                                  evt._id,
+                                  evt.title,
+                                  'REJECTED',
+                                  rejectionNote.trim() || 'Returned by DSW Administration for schedule/venue revision.'
+                                )
+                              }
+                            >
+                              Confirm Rejection
+                            </Button>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
     </div>
   );
 };
+

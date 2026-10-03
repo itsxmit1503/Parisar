@@ -5,6 +5,14 @@
 
 export type UserRole = 'student' | 'organizer' | 'admin';
 
+export interface RegisteredDevice {
+  deviceId: string;
+  platform: 'web' | 'mobile';
+  deviceName: string;
+  verifiedAt: string;
+  lastActiveAt: string;
+}
+
 export interface User {
   _id: string;
   name: string;
@@ -21,6 +29,7 @@ export interface User {
   phone?: string;
   organizerStatus?: 'NONE' | 'PENDING' | 'VERIFIED' | 'REJECTED';
   organizerRequest?: OrganizerVerificationRequest;
+  registeredDevices?: RegisteredDevice[];
   createdAt: string;
   updatedAt: string;
 }
@@ -62,6 +71,10 @@ export type EventCategory =
   | 'Career';
 
 export type EventStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'PUBLISHED' | 'REJECTED' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
+
+export type EventMode = 'OFFLINE' | 'ONLINE' | 'HYBRID';
+
+export type AttendanceSessionStatus = 'NOT_STARTED' | 'ACTIVE' | 'CLOSED';
 
 export type CampusLocationCategory =
   | 'Academic'
@@ -106,6 +119,7 @@ export interface CampusEvent {
   title: string;
   description: string;
   category: EventCategory;
+  eventMode?: EventMode;
   organizerId: string;
   organizerName: string;
   organizerEmail: string;
@@ -122,6 +136,12 @@ export interface CampusEvent {
   eligibility?: string;
   specialInstructions?: string;
   departmentScope?: string; // e.g. "Department of Computer Science & Applications" or "Open to all DHSGSU"
+  certificateRequired?: boolean;
+  minParticipationPercent?: number; // e.g. 80
+  attendanceSessionStatus?: AttendanceSessionStatus;
+  attendanceStartedAt?: string;
+  attendanceClosedAt?: string;
+  rejectionReason?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -142,7 +162,9 @@ export interface Registration {
   checkedInAt?: string | null;
 }
 
-export type AttendanceMethod = 'qr' | 'manual';
+export type AttendanceMethod = 'qr' | 'manual' | 'online_session';
+
+export type ParticipantSessionStatus = 'JOINED' | 'ACTIVE' | 'PAUSED_DISCONNECTED' | 'COMPLETED';
 
 export interface AttendanceRecord {
   _id: string;
@@ -155,6 +177,13 @@ export interface AttendanceRecord {
   checkedInAt: string;
   checkedInBy: string;
   method: AttendanceMethod;
+  participatedMinutes?: number;
+  requiredMinutes?: number;
+  totalEventMinutes?: number;
+  participationPercent?: number;
+  sessionStatus?: ParticipantSessionStatus;
+  lastValidatedAt?: string;
+  eligibleForCertificate?: boolean;
 }
 
 export type CertificateType = 'PARTICIPATION' | 'MERIT' | 'EXCELLENCE';
@@ -173,6 +202,8 @@ export interface Certificate {
   certificateType: CertificateType;
   issueAuthorizedBy: string;
   academicAuthority?: string; // e.g. "Office of the Dean of Students' Welfare (DSW), DHSGSU"
+  participationPercent?: number;
+  participatedMinutes?: number;
 }
 
 export type NotificationType = 

@@ -8,7 +8,9 @@ import {
   QrCode, 
   PlusCircle, 
   MapPin, 
-  ArrowRight
+  ArrowRight,
+  Award,
+  Megaphone
 } from 'lucide-react';
 import { CategoryBadge, EventStatusBadge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -27,6 +29,8 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   onManageEvents,
   onScanAttendance,
   onViewParticipants,
+  onAnnouncements,
+  onCertificates,
 }) => {
   const { currentUser, events, attendance } = useApp();
   const [statusFilter, setStatusFilter] = useState<'upcoming' | 'pending' | 'completed'>('upcoming');
@@ -34,7 +38,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   const myEvents = events.filter(e => e.organizerId === currentUser._id);
 
   const upcomingEvents = myEvents.filter(
-    e => e.status === 'PUBLISHED' || e.status === 'APPROVED'
+    e => e.status === 'PUBLISHED' || e.status === 'APPROVED' || e.status === 'ONGOING'
   );
   const pendingEvents = myEvents.filter(
     e => e.status === 'PENDING_REVIEW' || e.status === 'DRAFT'
@@ -42,6 +46,15 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   const completedEvents = myEvents.filter(
     e => e.status === 'COMPLETED' || e.status === 'REJECTED' || e.status === 'CANCELLED'
   );
+
+  const draftCount = myEvents.filter(e => e.status === 'DRAFT').length;
+  const pendingReviewCount = myEvents.filter(e => e.status === 'PENDING_REVIEW').length;
+  const publishedCount = myEvents.filter(e => e.status === 'PUBLISHED' || e.status === 'APPROVED').length;
+  const ongoingCount = myEvents.filter(e => e.status === 'ONGOING' || e.attendanceSessionStatus === 'ACTIVE').length;
+  const completedCount = myEvents.filter(e => e.status === 'COMPLETED').length;
+  const rejectedCount = myEvents.filter(e => e.status === 'REJECTED').length;
+  const totalRegistrations = myEvents.reduce((sum, e) => sum + e.registrationCount, 0);
+  const totalVerifiedAttendance = attendance.filter(a => myEvents.some(e => e._id === a.eventId)).length;
 
   const displayedEvents =
     statusFilter === 'upcoming'
@@ -62,22 +75,67 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
             Good morning, {currentUser.name.split(' ')[0]}
           </h1>
           <p className="text-sm text-[#62605B]">
-            {currentUser.department}
+            {currentUser.department} · Verified Organizer
           </p>
         </div>
 
-        <Button
-          variant="primary"
-          size="lg"
-          leftIcon={<PlusCircle className="w-5 h-5" />}
-          onClick={onCreateEvent}
-          className="self-start sm:self-auto"
-        >
-          Create Event
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            leftIcon={<Megaphone className="w-4 h-4 text-[#B08A4A]" />}
+            onClick={() => onAnnouncements()}
+          >
+            Send Announcement
+          </Button>
+          <Button
+            variant="primary"
+            size="lg"
+            leftIcon={<PlusCircle className="w-5 h-5" />}
+            onClick={onCreateEvent}
+            className="self-start sm:self-auto"
+          >
+            Create Event
+          </Button>
+        </div>
       </section>
 
-      {/* 2. Your Events: Upcoming / Pending Approval / Completed */}
+      {/* 1B. Live Operational Metrics Strip */}
+      <section className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-3.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">Total Managed Events</div>
+          <div className="text-2xl font-mono font-extrabold text-[#18212B] mt-0.5">{myEvents.length}</div>
+          <div className="text-[11px] text-[#62605B] mt-0.5">
+            {publishedCount} Published · {ongoingCount} Live
+          </div>
+        </div>
+
+        <div className="p-3.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">Proposals & Drafts</div>
+          <div className="text-2xl font-mono font-extrabold text-[#B08A4A] mt-0.5">{pendingReviewCount + draftCount}</div>
+          <div className="text-[11px] text-[#62605B] mt-0.5">
+            {pendingReviewCount} Pending · {draftCount} Draft · {rejectedCount} Returned
+          </div>
+        </div>
+
+        <div className="p-3.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">Student Registrations</div>
+          <div className="text-2xl font-mono font-extrabold text-[#B6533C] mt-0.5">{totalRegistrations}</div>
+          <div className="text-[11px] text-[#62605B] mt-0.5">
+            Confirmed passes issued
+          </div>
+        </div>
+
+        <div className="p-3.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">Attendance & Completed</div>
+          <div className="text-2xl font-mono font-extrabold text-[#2F613B] mt-0.5">{totalVerifiedAttendance}</div>
+          <div className="text-[11px] text-[#62605B] mt-0.5">
+            Verified present · {completedCount} Completed
+          </div>
+        </div>
+      </section>
+
+      {/* 2. Your Events: Upcoming & Ongoing / Pending Approval / Completed */}
       <section className="space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <h2 className="text-lg sm:text-xl font-extrabold text-[#18212B]">
@@ -94,7 +152,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                   : 'bg-[#FCFAF5] text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
               }`}
             >
-              Upcoming ({upcomingEvents.length})
+              Upcoming &amp; Live ({upcomingEvents.length})
             </button>
 
             <button
@@ -105,7 +163,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                   : 'bg-[#FCFAF5] text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
               }`}
             >
-              Pending Approval ({pendingEvents.length})
+              Pending &amp; Drafts ({pendingEvents.length})
             </button>
 
             <button
@@ -116,7 +174,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                   : 'bg-[#FCFAF5] text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
               }`}
             >
-              Completed ({completedEvents.length})
+              Completed &amp; Returned ({completedEvents.length})
             </button>
           </div>
         </div>
@@ -136,6 +194,16 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                     <div className="flex flex-wrap items-center gap-2">
                       <CategoryBadge category={evt.category} />
                       <EventStatusBadge status={evt.status} />
+                      {evt.eventMode && (
+                        <span className="px-2 py-0.5 rounded-[2px] bg-[#EAE5DB] border border-[#B9B4AA] text-[10px] font-mono font-bold text-[#18212B]">
+                          {evt.eventMode}
+                        </span>
+                      )}
+                      {evt.attendanceSessionStatus === 'ACTIVE' && (
+                        <span className="px-2 py-0.5 rounded-[2px] bg-[#EBF3ED] border border-[#2F613B]/40 text-[10px] font-mono font-bold text-[#2F613B]">
+                          ● Attendance Session Live
+                        </span>
+                      )}
                     </div>
 
                     <h3 className="text-base sm:text-lg font-extrabold text-[#18212B] leading-snug">
@@ -163,11 +231,13 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                       Participants: <strong className="text-[#18212B]">{evt.registrationCount}/{evt.capacity}</strong>
                       {' · '}
                       Checked In: <strong className="text-[#2F613B]">{checkedInCount}</strong>
+                      {' · '}
+                      Threshold: <strong className="text-[#B08A4A]">{evt.minParticipationPercent ?? 80}%</strong>
                     </div>
                   </div>
 
-                  {/* Contextual Actions: Participants + Attendance */}
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-[#EAE5DB]">
+                  {/* Contextual Actions: Participants + Attendance + Certificates */}
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-[#EAE5DB]">
                     <Button
                       variant="secondary"
                       size="md"
@@ -176,14 +246,25 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                     >
                       Participants
                     </Button>
-                    <Button
-                      variant="primary"
-                      size="md"
-                      leftIcon={<QrCode className="w-4 h-4" />}
-                      onClick={() => onScanAttendance(evt._id)}
-                    >
-                      Attendance
-                    </Button>
+                    {evt.status === 'COMPLETED' ? (
+                      <Button
+                        variant="brass"
+                        size="md"
+                        leftIcon={<Award className="w-4 h-4" />}
+                        onClick={() => onCertificates(evt._id)}
+                      >
+                        Certificates
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="primary"
+                        size="md"
+                        leftIcon={<QrCode className="w-4 h-4" />}
+                        onClick={() => onScanAttendance(evt._id)}
+                      >
+                        Attendance
+                      </Button>
+                    )}
                   </div>
                 </div>
               );

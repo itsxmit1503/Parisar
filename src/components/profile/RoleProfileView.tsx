@@ -12,7 +12,10 @@ import {
   LogOut,
   Calendar,
   Award,
-  Users
+  Users,
+  Laptop,
+  Smartphone,
+  Trash2
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../ui/Button';
@@ -24,7 +27,16 @@ interface RoleProfileViewProps {
 }
 
 export const RoleProfileView: React.FC<RoleProfileViewProps> = ({ onLogout }) => {
-  const { currentUser, updateUserProfile, events, organizerRequests } = useApp();
+  const {
+    currentUser,
+    updateUserProfile,
+    events,
+    organizerRequests,
+    currentDeviceId,
+    currentPlatform,
+    verifyOrReplaceDevice,
+    revokeDevice,
+  } = useApp();
   const { showToast } = useToast();
 
   const [isEditing, setIsEditing] = useState(false);
@@ -33,9 +45,14 @@ export const RoleProfileView: React.FC<RoleProfileViewProps> = ({ onLogout }) =>
   const [designation, setDesignation] = useState(currentUser.designation || '');
   const [phone, setPhone] = useState(currentUser.phone || '+91 75822 64201');
   const [organization, setOrganization] = useState(currentUser.organization || currentUser.department);
+  const [newPassword, setNewPassword] = useState('');
 
   const myManagedEvents = events.filter(e => e.organizerId === currentUser._id);
   const pendingReqsCount = organizerRequests.filter(r => r.status === 'PENDING').length;
+
+  const registeredDevices = currentUser.registeredDevices || [];
+  const webDevice = registeredDevices.find(d => d.platform === 'web');
+  const mobileDevice = registeredDevices.find(d => d.platform === 'mobile');
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,10 +62,29 @@ export const RoleProfileView: React.FC<RoleProfileViewProps> = ({ onLogout }) =>
       designation,
       phone,
       organization,
+      ...(newPassword.trim() ? { passwordHash: newPassword.trim() } : {}),
     });
     if (res.success) {
       setIsEditing(false);
-      showToast('success', 'Official university profile record updated.', 'Profile Saved');
+      setNewPassword('');
+      showToast('success', 'Official university profile & credentials updated.', 'Profile Saved');
+    }
+  };
+
+  const handleVerifyCurrentDevice = () => {
+    const res = verifyOrReplaceDevice(
+      currentPlatform,
+      currentPlatform === 'mobile' ? 'DHSGSU Official Android Client' : 'DHSGSU Web Browser Session'
+    );
+    if (res.success) {
+      showToast('success', 'Current device bound to your official PARISAR account.', 'Device Verified');
+    }
+  };
+
+  const handleRevokeDevice = (deviceId: string, label: string) => {
+    const res = revokeDevice(deviceId);
+    if (res.success) {
+      showToast('info', `Removed ${label} from verified device bindings.`, 'Device Unlinked');
     }
   };
 
@@ -128,7 +164,7 @@ export const RoleProfileView: React.FC<RoleProfileViewProps> = ({ onLogout }) =>
         <div className="flex items-center justify-between border-b border-[#B9B4AA] pb-4">
           <div>
             <h2 className="text-base font-bold text-[#18212B]">
-              {isEditing ? 'Update Institutional Profile' : 'Authenticated University Credential Record'}
+              {isEditing ? 'Update Institutional Profile & Password' : 'Authenticated University Credential Record'}
             </h2>
             <p className="text-xs text-[#62605B]">
               Official identity details associated with your {currentUser.role.toUpperCase()} privileges on PARISAR.
@@ -190,7 +226,7 @@ export const RoleProfileView: React.FC<RoleProfileViewProps> = ({ onLogout }) =>
                 />
               </div>
 
-              <div className="sm:col-span-2">
+              <div>
                 <label className="block text-[10px] font-mono font-bold uppercase text-[#18212B] mb-1">
                   Affiliated University Council / Society
                 </label>
@@ -199,6 +235,19 @@ export const RoleProfileView: React.FC<RoleProfileViewProps> = ({ onLogout }) =>
                   value={organization}
                   onChange={e => setOrganization(e.target.value)}
                   className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-medium text-[#18212B] focus:outline-none focus:border-[#18212B]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono font-bold uppercase text-[#18212B] mb-1">
+                  New Password (Optional)
+                </label>
+                <input
+                  type="password"
+                  placeholder="Leave blank to keep current password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-mono text-[#18212B] focus:outline-none focus:border-[#18212B]"
                 />
               </div>
             </div>
@@ -290,6 +339,108 @@ export const RoleProfileView: React.FC<RoleProfileViewProps> = ({ onLogout }) =>
           </div>
         </div>
       </div>
+
+      {/* Verified Device & Session Binding (1 Web + 1 Mobile Limit) */}
+      <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-6 sm:p-8 shadow-[2px_2px_0_0_#18212B] space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#B9B4AA] pb-3">
+          <div>
+            <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#B6533C]">
+              Device & Session Security Policy
+            </div>
+            <h3 className="text-base font-extrabold text-[#18212B]">
+              Verified Device Bindings (Max 1 Web + 1 Mobile)
+            </h3>
+            <p className="text-xs text-[#62605B]">
+              Your PARISAR account may stay bound to at most 1 verified Web browser and 1 verified Mobile Android device.
+            </p>
+          </div>
+
+          <Button variant="secondary" size="sm" onClick={handleVerifyCurrentDevice}>
+            Verify Current Device ({currentPlatform.toUpperCase()})
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          {/* Web Slot */}
+          <div className="p-4 bg-[#EAE5DB]/60 border border-[#B9B4AA] rounded-[3px] flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <Laptop className="w-4 h-4 text-[#18212B] shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-[#18212B] flex items-center gap-1.5">
+                  <span>Web Browser Slot (1/1)</span>
+                  {webDevice?.deviceId === currentDeviceId && (
+                    <span className="px-1.5 py-0.5 rounded-[2px] bg-[#EBF3ED] text-[#2F613B] text-[9px] font-mono font-bold">
+                      THIS DEVICE
+                    </span>
+                  )}
+                </div>
+                {webDevice ? (
+                  <>
+                    <div className="text-[11px] font-mono text-[#62605B] mt-0.5">
+                      {webDevice.deviceName} ({webDevice.deviceId})
+                    </div>
+                    <div className="text-[10px] text-[#62605B] mt-0.5">
+                      Verified: {new Date(webDevice.verifiedAt).toLocaleDateString()}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] text-[#62605B] mt-0.5">No Web device currently bound.</div>
+                )}
+              </div>
+            </div>
+            {webDevice && (
+              <button
+                type="button"
+                onClick={() => handleRevokeDevice(webDevice.deviceId, 'Web Browser')}
+                className="text-[#A83226] hover:bg-[#FBEAEA] p-1.5 rounded-[2px] cursor-pointer"
+                title="Unlink Web Device"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Mobile Slot */}
+          <div className="p-4 bg-[#EAE5DB]/60 border border-[#B9B4AA] rounded-[3px] flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <Smartphone className="w-4 h-4 text-[#B6533C] shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-[#18212B] flex items-center gap-1.5">
+                  <span>Android Mobile Slot (1/1)</span>
+                  {mobileDevice?.deviceId === currentDeviceId && (
+                    <span className="px-1.5 py-0.5 rounded-[2px] bg-[#EBF3ED] text-[#2F613B] text-[9px] font-mono font-bold">
+                      THIS DEVICE
+                    </span>
+                  )}
+                </div>
+                {mobileDevice ? (
+                  <>
+                    <div className="text-[11px] font-mono text-[#62605B] mt-0.5">
+                      {mobileDevice.deviceName} ({mobileDevice.deviceId})
+                    </div>
+                    <div className="text-[10px] text-[#62605B] mt-0.5">
+                      Verified: {new Date(mobileDevice.verifiedAt).toLocaleDateString()}
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[11px] text-[#62605B] mt-0.5">No Mobile device currently bound.</div>
+                )}
+              </div>
+            </div>
+            {mobileDevice && (
+              <button
+                type="button"
+                onClick={() => handleRevokeDevice(mobileDevice.deviceId, 'Android Device')}
+                className="text-[#A83226] hover:bg-[#FBEAEA] p-1.5 rounded-[2px] cursor-pointer"
+                title="Unlink Mobile Device"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
+

@@ -24,29 +24,37 @@ const PRIMARY_CATEGORIES: ('All' | EventCategory)[] = [
   'Workshop',
   'Cultural',
   'Competition',
+  'Sports',
+  'Placement',
+  'Coding',
 ];
 
 const DEPARTMENTS = [
   'All Departments',
-  'Department of Computer Science & Applications (DCSA)',
-  'School of Chemical & Physical Sciences',
-  'Department of Technology & Engineering',
-  'School of Law & Jurisprudence',
-  'Department of Physical Education & Sports Board',
-  'DHSGSU Innovation & Incubation Centre (IIC)',
+  'Department of Computer Science and Applications',
+  'Faculty of Science & Academic Council',
+  'Department of General and Applied Geography',
+  'Department of Law',
+  'Department of Physical Education & Sports',
+  'Department of Commerce',
+  'Department of Physics',
+  'Department of Hindi',
+  'Training & Placement Cell, DHSGSU',
   'University Cultural Affairs Council',
 ];
 
 const VENUES = [
   'All Venues',
-  'Swarna Jayanti Auditorium',
-  'Turing Advanced Computing Lab (DCSA)',
-  'Prof. C.V. Raman Science Lecture Theatre',
-  'Gour Bhavan Senate & Conference Hall',
-  'DHSGSU Sports Complex & Stadium',
-  'Rabindranath Tagore Cultural Mandapam',
-  'DHSGSU Innovation & Incubation Centre (IIC)',
-  'Pt. Motilal Nehru Moot Court & Law Hall',
+  'Abhimanch Sabhagar',
+  'Department of Computer Science and Applications',
+  'Abdul Gani Khan Stadium',
+  'Jawaharlal Nehru Central Library',
+  'Administrative Building',
+  'Department of General and Applied Geography',
+  'Department of Law',
+  'Department of Commerce',
+  'Department of Physics',
+  'Department of Hindi',
 ];
 
 export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
@@ -59,6 +67,7 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
   const [availabilityFilter, setAvailabilityFilter] = useState<'all' | 'open' | 'registered'>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('All Departments');
   const [venueFilter, setVenueFilter] = useState<string>('All Venues');
+  const [dateFilter, setDateFilter] = useState<string>('');
   const [showFiltersDrawer, setShowFiltersDrawer] = useState(false);
 
   const registeredEventIds = useMemo(() => {
@@ -71,7 +80,7 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
 
   const filteredEvents = useMemo(() => {
     return events.filter(evt => {
-      // Students should only see approved/published public events
+      // Students should only see approved/published/ongoing/completed public events
       if (evt.status === 'DRAFT' || evt.status === 'PENDING_REVIEW' || evt.status === 'REJECTED' || evt.status === 'CANCELLED') {
         return false;
       }
@@ -97,6 +106,14 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
       // Venue Filter
       if (venueFilter !== 'All Venues') {
         if (!evt.venue.toLowerCase().includes(venueFilter.toLowerCase())) {
+          return false;
+        }
+      }
+
+      // Date Filter
+      if (dateFilter) {
+        const evtDateStr = new Date(evt.startTime).toISOString().split('T')[0];
+        if (evtDateStr !== dateFilter) {
           return false;
         }
       }
@@ -129,7 +146,7 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
 
       return true;
     });
-  }, [events, selectedCategory, searchQuery, availabilityFilter, departmentFilter, venueFilter, registeredEventIds]);
+  }, [events, selectedCategory, searchQuery, availabilityFilter, departmentFilter, venueFilter, dateFilter, registeredEventIds]);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-20 lg:pb-12">
@@ -159,14 +176,14 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
           <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-[#62605B]" />
           <input
             type="text"
-            placeholder="Search events..."
+            placeholder="Search events by title, department, venue, or keyword..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full min-h-[48px] pl-11 pr-4 py-3 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] text-sm sm:text-base font-medium text-[#18212B] placeholder-[#62605B] shadow-[2px_2px_0_0_#18212B] focus:outline-none focus:border-[#18212B]"
           />
         </div>
 
-        {/* Compact Category Filters: All, Seminar, Workshop, Cultural, Competition */}
+        {/* Compact Category Filters */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           {PRIMARY_CATEGORIES.map(cat => (
             <button
@@ -186,7 +203,7 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
 
       {/* Optional Additional Filters Drawer */}
       {showFiltersDrawer && (
-        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-4 shadow-[2px_2px_0_0_#18212B] grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] p-4 shadow-[2px_2px_0_0_#18212B] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div>
             <label className="text-xs font-bold text-[#18212B] block mb-1.5">
               Department
@@ -223,6 +240,18 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
 
           <div>
             <label className="text-xs font-bold text-[#18212B] block mb-1.5">
+              Event Date
+            </label>
+            <input
+              type="date"
+              value={dateFilter}
+              onChange={e => setDateFilter(e.target.value)}
+              className="w-full min-h-[44px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-semibold text-[#18212B]"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs font-bold text-[#18212B] block mb-1.5">
               Status
             </label>
             <div className="flex items-center gap-1.5">
@@ -242,6 +271,7 @@ export const EventDiscovery: React.FC<EventDiscoveryProps> = ({
                   setAvailabilityFilter('all');
                   setDepartmentFilter('All Departments');
                   setVenueFilter('All Venues');
+                  setDateFilter('');
                 }}
                 className="min-h-[44px] px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-bold text-[#18212B] cursor-pointer"
               >

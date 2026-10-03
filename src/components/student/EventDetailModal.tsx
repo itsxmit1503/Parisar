@@ -17,7 +17,10 @@ import {
   Compass,
   Share2,
   CalendarPlus,
-  User
+  User,
+  Award,
+  Radio,
+  XCircle
 } from 'lucide-react';
 
 interface EventDetailModalProps {
@@ -35,7 +38,15 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   onViewPass,
   onViewOnMap,
 }) => {
-  const { currentUser, registrations, venues, registerForEvent } = useApp();
+  const {
+    currentUser,
+    registrations,
+    attendance,
+    venues,
+    registerForEvent,
+    cancelRegistration,
+    joinOrValidateOnlineAttendance,
+  } = useApp();
   const { showToast } = useToast();
   const [isRegistering, setIsRegistering] = useState(false);
 
@@ -51,6 +62,9 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const userRegistration = registrations.find(
     r => r.eventId === event._id && r.userId === currentUser._id && r.status === 'CONFIRMED'
   );
+  const userAttendance = attendance.find(
+    a => a.eventId === event._id && a.userId === currentUser._id
+  );
 
   const isRegistered = Boolean(userRegistration);
   const isFull = event.registrationCount >= event.capacity;
@@ -58,6 +72,18 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const isCancelled = event.status === 'CANCELLED';
   const isCompleted = event.status === 'COMPLETED';
   const remainingSeats = Math.max(0, event.capacity - event.registrationCount);
+
+  const durationMinutes = Math.max(
+    30,
+    Math.min(
+      720,
+      Math.round((new Date(event.endTime).getTime() - new Date(event.startTime).getTime()) / (1000 * 60)) || 180
+    )
+  );
+  const minPct = event.minParticipationPercent ?? 80;
+  const requiredMinutes = Math.ceil((durationMinutes * minPct) / 100);
+  const eventMode = event.eventMode || 'OFFLINE';
+  const isSessionActive = event.attendanceSessionStatus === 'ACTIVE' || event.status === 'ONGOING';
 
   const handleRegister = async () => {
     setIsRegistering(true);
@@ -79,6 +105,29 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
       showToast('error', 'Unexpected error during registration.', 'Error');
     } finally {
       setIsRegistering(false);
+    }
+  };
+
+  const handleCancelRegistration = () => {
+    if (!userRegistration) return;
+    const res = cancelRegistration(userRegistration._id);
+    if (res.success) {
+      showToast('info', `Your registration for "${event.title}" has been cancelled.`, 'Registration Cancelled');
+    } else {
+      showToast('error', res.error.message, 'Cannot Cancel');
+    }
+  };
+
+  const handleValidateSessionAttendance = (addMins = 60) => {
+    const res = joinOrValidateOnlineAttendance(event._id, addMins);
+    if (res.success) {
+      showToast(
+        'success',
+        `Participation logged: ${res.data.participatedMinutes}/${res.data.totalEventMinutes} min (${res.data.participationPercent}%).`,
+        'Attendance Validated'
+      );
+    } else {
+      showToast('error', res.error.message, 'Attendance Error');
     }
   };
 
@@ -157,10 +206,20 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             </button>
           </div>
 
-          {/* Primary Decision CTA: Register OR Registered + View Pass */}
-          <div className="flex items-center gap-2.5 ml-auto">
+          {/* Primary Decision CTA: Register OR Registered + View Pass + Cancel */}
+          <div className="flex items-center gap-2 ml-auto">
             {isRegistered && userRegistration ? (
               <>
+                {!userRegistration.checkedInAt && !isCompleted && (
+                  <button
+                    type="button"
+                    onClick={handleCancelRegistration}
+                    className="min-h-[40px] px-3 py-1.5 rounded-[3px] bg-[#FBEFEF] hover:bg-[#F7DFDF] border border-[#A83226]/40 text-xs font-bold text-[#A83226] flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    <span>Cancel Registration</span>
+                  </button>
+                )}
                 <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-[3px] bg-[#EBF3ED] text-[#2F613B] border border-[#2F613B]/30 text-xs font-bold">
                   <CheckCircle2 className="w-4 h-4" />
                   <span>Registered</span>
@@ -208,22 +267,32 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
       }
     >
       <div className="space-y-5 text-sm text-[#18212B]">
-        {/* 1. Event Image + Category */}
+        {/* 1. Event Image + Category + Event Mode */}
         <div className="h-52 w-full rounded-[4px] overflow-hidden border border-[#B9B4AA] relative bg-[#EAE5DB]">
           <img
             src={event.coverImage}
             alt={event.title}
             className="w-full h-full object-cover"
           />
-          <div className="absolute top-3 left-3">
+          <div className="absolute top-3 left-3 flex items-center gap-2">
             <CategoryBadge category={event.category} />
+            <span className="px-2 py-0.5 rounded-[2px] bg-[#18212B]/90 text-[#FCFAF5] text-[10px] font-mono font-bold uppercase tracking-wider">
+              {eventMode}
+            </span>
           </div>
         </div>
 
-        {/* 2. Event Title */}
-        <h2 className="text-xl sm:text-2xl font-extrabold text-[#18212B] leading-snug">
-          {event.title}
-        </h2>
+        {/* 2. Event Title & Department Scope */}
+        <div className="space-y-1">
+          {event.departmentScope && (
+            <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-[#B6533C]">
+              {event.departmentScope}
+            </div>
+          )}
+          <h2 className="text-xl sm:text-2xl font-extrabold text-[#18212B] leading-snug">
+            {event.title}
+          </h2>
+        </div>
 
         {/* 3. Date, Time, Venue + Campus Map Connection */}
         <div className="p-4 bg-[#EAE5DB]/70 border border-[#B9B4AA] rounded-[4px] space-y-2.5 text-xs sm:text-sm">
@@ -233,7 +302,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           </div>
           <div className="flex items-center gap-2.5 text-[#18212B]">
             <Clock className="w-4 h-4 text-[#64788A] shrink-0" />
-            <span>{eventTime}</span>
+            <span>{eventTime} ({durationMinutes} mins)</span>
           </div>
           <div className="pt-1 border-t border-[#D5D0C5] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-start gap-2.5">
@@ -270,7 +339,43 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           </div>
         </div>
 
-        {/* 4. Short Description */}
+        {/* 4. Live Online/Hybrid Session Attendance Validation Widget (if registered & active) */}
+        {isRegistered && isSessionActive && (
+          <div className="p-4 bg-[#EBF3ED] border border-[#2F613B]/40 rounded-[4px] space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Radio className="w-4 h-4 text-[#2F613B] animate-pulse" />
+                <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#2F613B]">
+                  Live Attendance Session Open ({eventMode})
+                </span>
+              </div>
+              <span className="text-xs font-mono font-bold text-[#18212B]">
+                {userAttendance
+                  ? `${userAttendance.participatedMinutes ?? 0}/${durationMinutes} min (${userAttendance.participationPercent ?? 0}%)`
+                  : `0/${durationMinutes} min (0%)`}
+              </span>
+            </div>
+            <p className="text-xs text-[#18212B] leading-relaxed">
+              The organizer has opened live attendance validation. Validate your active session presence below or scan your QR pass at the venue entrance. Certificate eligibility requires <strong>{minPct}% ({requiredMinutes} mins)</strong> active participation.
+            </p>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div className="text-[11px] font-mono font-bold text-[#2F613B]">
+                {userAttendance?.eligibleForCertificate
+                  ? '✓ Certificate Threshold Reached'
+                  : `Required: ${requiredMinutes} mins (${minPct}%)`}
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleValidateSessionAttendance(75)}
+              >
+                {userAttendance ? 'Validate Active Presence (+75 min)' : 'Join & Validate Session (+75 min)'}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* 5. Short Description & Rules */}
         <div className="space-y-1.5">
           <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-[#62605B]">
             About This Event
@@ -280,8 +385,25 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           </p>
         </div>
 
-        {/* 5. Organizer & 6. Registration Status */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+        {(event.eligibility || event.specialInstructions) && (
+          <div className="p-3.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] space-y-2 text-xs">
+            {event.eligibility && (
+              <div>
+                <span className="font-mono font-bold uppercase text-[#62605B]">Eligibility: </span>
+                <span className="text-[#18212B] font-medium">{event.eligibility}</span>
+              </div>
+            )}
+            {event.specialInstructions && (
+              <div>
+                <span className="font-mono font-bold uppercase text-[#62605B]">Rules & Instructions: </span>
+                <span className="text-[#18212B] font-medium">{event.specialInstructions}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 6. Organizer, Registration Status, & Certificate Requirement */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
           <div className="p-3.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] space-y-1">
             <div className="text-[11px] font-mono font-bold uppercase text-[#62605B]">
               Organizer
@@ -289,6 +411,20 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <div className="text-xs sm:text-sm font-bold text-[#18212B] flex items-center gap-1.5">
               <User className="w-4 h-4 text-[#B6533C] shrink-0" />
               <span>{event.organizerName}</span>
+            </div>
+          </div>
+
+          <div className="p-3.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] space-y-1">
+            <div className="text-[11px] font-mono font-bold uppercase text-[#62605B]">
+              Certificate Policy
+            </div>
+            <div className="text-xs font-bold text-[#18212B] flex items-center gap-1.5">
+              <Award className="w-4 h-4 text-[#B08A4A] shrink-0" />
+              <span>
+                {event.certificateRequired !== false
+                  ? `Min ${minPct}% (${requiredMinutes}m)`
+                  : 'No Certificate'}
+              </span>
             </div>
           </div>
 
@@ -304,7 +440,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             ) : isFull ? (
               <div className="text-xs sm:text-sm font-bold text-[#A83226] flex items-center gap-1.5">
                 <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>Full ({event.capacity} seats filled)</span>
+                <span>Full ({event.capacity} seats)</span>
               </div>
             ) : isDeadlinePassed ? (
               <div className="text-xs sm:text-sm font-bold text-[#62605B]">
@@ -312,7 +448,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
               </div>
             ) : (
               <div className="text-xs sm:text-sm font-bold text-[#2F613B]">
-                Open · {remainingSeats} seats available
+                Open · {remainingSeats} seats left
               </div>
             )}
           </div>

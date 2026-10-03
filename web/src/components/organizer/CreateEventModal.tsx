@@ -2,11 +2,11 @@
 
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
-import { EventCategory, CampusEvent } from '../../types';
+import { EventCategory, CampusEvent, EventMode } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { useToast } from '../ui/Toast';
-import { AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { AlertCircle, ChevronDown, ChevronUp, AlertTriangle, Award } from 'lucide-react';
 
 interface CreateEventModalProps {
   isOpen: boolean;
@@ -34,7 +34,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const { venues, createEvent } = useApp();
+  const { venues, createEvent, getEventConflicts, currentUser } = useApp();
   const { showToast } = useToast();
 
   const eventVenues = venues.filter(v => v.isEventVenue !== false && v.latitude !== null && v.longitude !== null);
@@ -42,12 +42,18 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<EventCategory>('Workshop');
+  const [eventMode, setEventMode] = useState<EventMode>('OFFLINE');
   const [venueId, setVenueId] = useState('venue-abhimanch');
-  const [date, setDate] = useState('2026-10-15');
+  const [date, setDate] = useState('2026-10-28');
   const [startTime, setStartTime] = useState('10:00');
   const [endTime, setEndTime] = useState('13:00');
   const [capacity, setCapacity] = useState('60');
-  const [deadlineDate, setDeadlineDate] = useState('2026-10-14');
+  const [deadlineDate, setDeadlineDate] = useState('2026-10-27');
+  const [certificateRequired, setCertificateRequired] = useState<boolean>(true);
+  const [minParticipationPercent, setMinParticipationPercent] = useState<number>(80);
+  const [departmentScope, setDepartmentScope] = useState(
+    currentUser.department || 'Department of Computer Science and Applications'
+  );
   const [tagsInput, setTagsInput] = useState('DHSGSU, Workshop, Academic');
   const [eligibility, setEligibility] = useState('Open to all enrolled students of DHSGSU');
   const [specialInstructions, setSpecialInstructions] = useState('Bring your university ID card and relevant course materials.');
@@ -55,9 +61,20 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     'https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?auto=format&fit=crop&w=800&q=80'
   );
 
-  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const startIso = `${date}T${startTime}:00Z`;
+  const endIso = `${date}T${endTime}:00Z`;
+  const deadlineIso = `${deadlineDate}T23:59:00Z`;
+
+  const durationMinutes = Math.max(
+    15,
+    Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / (1000 * 60)) || 180
+  );
+  const requiredMinutes = Math.ceil((durationMinutes * minParticipationPercent) / 100);
+  const activeConflicts = getEventConflicts(venueId, startIso, endIso);
 
   const handleSubmit = (asDraft = false) => {
     setErrorMsg(null);
@@ -72,9 +89,6 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
     }
 
     const selectedVenue = venues.find(v => v.id === venueId) || eventVenues[0] || venues[0];
-    const startIso = `${date}T${startTime}:00Z`;
-    const endIso = `${date}T${endTime}:00Z`;
-    const deadlineIso = `${deadlineDate}T23:59:00Z`;
 
     const parsedTags = tagsInput
       .split(',')
@@ -89,6 +103,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           title: title.trim(),
           description: description.trim() || 'Comprehensive campus event organized through PARISAR • Dr. Harisingh Gour Vishwavidyalaya.',
           category,
+          eventMode,
           venue: selectedVenue.name,
           venueId: selectedVenue.id,
           startTime: startIso,
@@ -100,6 +115,9 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           status: asDraft ? 'DRAFT' : 'PENDING_REVIEW',
           eligibility,
           specialInstructions,
+          departmentScope,
+          certificateRequired,
+          minParticipationPercent,
         },
         asDraft
       );
@@ -169,6 +187,18 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           </div>
         )}
 
+        {activeConflicts.length > 0 && (
+          <div className="p-3.5 bg-[#FDF7EC] border-l-4 border-l-[#B26B16] border border-[#B26B16]/40 rounded-[3px] text-[#7D4A0D] flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-[#B26B16]" />
+            <div className="text-xs">
+              <div className="font-bold">Venue Schedule Overlap Detected</div>
+              <div>
+                The selected venue overlaps with <strong>&ldquo;{activeConflicts[0].title}&rdquo;</strong> on this date/time. University Administration may require a venue or timing adjustment before publishing.
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Essential Field 1: Event Title */}
         <div>
           <label className="font-bold text-xs text-[#18212B] block mb-1.5">
@@ -183,8 +213,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           />
         </div>
 
-        {/* Essential Field 2: Category & Campus Venue */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        {/* Essential Field 2: Category, Event Mode & Campus Venue */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           <div>
             <label className="font-bold text-xs text-[#18212B] block mb-1.5">Category *</label>
             <select
@@ -197,6 +227,19 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
                   {c}
                 </option>
               ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">Event Mode *</label>
+            <select
+              value={eventMode}
+              onChange={e => setEventMode(e.target.value as EventMode)}
+              className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B]"
+            >
+              <option value="OFFLINE">Offline (In-Person)</option>
+              <option value="ONLINE">Online (Live Session)</option>
+              <option value="HYBRID">Hybrid (Venue + Online)</option>
             </select>
           </div>
 
@@ -249,19 +292,66 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
           </div>
         </div>
 
-        {/* Essential Field 4: Seat Capacity */}
-        <div>
-          <label className="font-bold text-xs text-[#18212B] block mb-1.5">
-            Participant Capacity (Seats) *
-          </label>
-          <input
-            type="number"
-            min="1"
-            value={capacity}
-            onChange={e => setCapacity(e.target.value)}
-            className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-mono font-bold text-[#18212B] focus:outline-none focus:border-[#18212B]"
-          />
+        {/* Essential Field 4: Seat Capacity & Certificate Participation Threshold */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+          <div>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">
+              Seat Capacity *
+            </label>
+            <input
+              type="number"
+              min="1"
+              value={capacity}
+              onChange={e => setCapacity(e.target.value)}
+              className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-mono font-bold text-[#18212B] focus:outline-none focus:border-[#18212B]"
+            />
+          </div>
+
+          <div>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">
+              Issue Certificates?
+            </label>
+            <select
+              value={certificateRequired ? 'yes' : 'no'}
+              onChange={e => setCertificateRequired(e.target.value === 'yes')}
+              className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-semibold text-[#18212B]"
+            >
+              <option value="yes">Yes — Verified Certificate</option>
+              <option value="no">No Certificate</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="font-bold text-xs text-[#18212B] block mb-1.5">
+              Min Participation % *
+            </label>
+            <input
+              type="number"
+              min="50"
+              max="100"
+              step="5"
+              disabled={!certificateRequired}
+              value={minParticipationPercent}
+              onChange={e => setMinParticipationPercent(Math.max(50, Math.min(100, Number(e.target.value) || 80)))}
+              className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-mono font-bold text-[#18212B]"
+            />
+          </div>
         </div>
+
+        {/* Calculated Participation Duration Formula Box */}
+        {certificateRequired && (
+          <div className="p-3 bg-[#EBF3ED] border border-[#2F613B]/30 rounded-[3px] flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2 text-[#18212B]">
+              <Award className="w-4 h-4 text-[#2F613B] shrink-0" />
+              <span>
+                <strong>Certificate Eligibility Threshold:</strong> Event Duration <strong>{durationMinutes} mins</strong> × <strong>{minParticipationPercent}%</strong>
+              </span>
+            </div>
+            <span className="font-mono font-extrabold text-[#2F613B]">
+              = {requiredMinutes} mins required
+            </span>
+          </div>
+        )}
 
         {/* Essential Field 5: Description */}
         <div>
@@ -282,7 +372,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
             onClick={() => setShowAdvancedOptions(!showAdvancedOptions)}
             className="w-full min-h-[44px] px-3.5 py-2.5 rounded-[3px] bg-[#EAE5DB]/70 border border-[#B9B4AA] flex items-center justify-between text-xs font-bold text-[#18212B] hover:bg-[#EAE5DB] transition-colors cursor-pointer touch-manipulation"
           >
-            <span>Additional Event Details (Optional: Deadline, Eligibility, Instructions)</span>
+            <span>Additional Event Details (Deadline, Department Scope, Eligibility, Instructions)</span>
             {showAdvancedOptions ? (
               <ChevronUp className="w-4 h-4 text-[#B6533C]" />
             ) : (
@@ -295,13 +385,38 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
                   <label className="font-bold text-xs text-[#18212B] block mb-1.5">
-                    Registration Deadline Date
+                    Registration Deadline Date *
                   </label>
                   <input
                     type="date"
                     value={deadlineDate}
                     onChange={e => setDeadlineDate(e.target.value)}
                     className="w-full min-h-[44px] px-3 py-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-xs font-mono text-[#18212B]"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-xs text-[#18212B] block mb-1.5">
+                    Organizing Department / Cell
+                  </label>
+                  <input
+                    type="text"
+                    value={departmentScope}
+                    onChange={e => setDepartmentScope(e.target.value)}
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-xs text-[#18212B]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div>
+                  <label className="font-bold text-xs text-[#18212B] block mb-1.5">Eligibility</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Open to all enrolled students of DHSGSU"
+                    value={eligibility}
+                    onChange={e => setEligibility(e.target.value)}
+                    className="w-full min-h-[44px] px-3 py-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-xs text-[#18212B]"
                   />
                 </div>
 
@@ -320,19 +435,8 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               </div>
 
               <div>
-                <label className="font-bold text-xs text-[#18212B] block mb-1.5">Eligibility</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Open to all enrolled students of DHSGSU"
-                  value={eligibility}
-                  onChange={e => setEligibility(e.target.value)}
-                  className="w-full min-h-[44px] px-3 py-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-xs text-[#18212B]"
-                />
-              </div>
-
-              <div>
                 <label className="font-bold text-xs text-[#18212B] block mb-1.5">
-                  Special Instructions for Attendees
+                  Special Instructions &amp; Rules for Attendees
                 </label>
                 <input
                   type="text"

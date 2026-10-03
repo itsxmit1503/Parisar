@@ -36,11 +36,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onExploreEvents,
   onLogout,
 }) => {
-  const { currentUser, registrations, events, certificates, attendance, updateUserProfile, logout } = useApp();
+  const {
+    currentUser,
+    registrations,
+    events,
+    certificates,
+    attendance,
+    currentDeviceId,
+    currentPlatform,
+    updateUserProfile,
+    verifyOrReplaceDevice,
+    revokeDevice,
+    cancelRegistration,
+    logout,
+  } = useApp();
   const { showToast } = useToast();
   const [activeSubTab, setActiveSubTab] = useState<'my-events' | 'passport' | 'certificates' | 'notifications' | 'settings'>(initialSubTab);
+  const [myEventsFilter, setMyEventsFilter] = useState<'ALL' | 'UPCOMING' | 'ONGOING' | 'COMPLETED' | 'CANCELLED'>('ALL');
 
-  const studentRegs = registrations.filter(r => r.userId === currentUser._id && r.status === 'CONFIRMED');
+  const allStudentRegs = registrations.filter(r => r.userId === currentUser._id);
+  const studentRegs = allStudentRegs.filter(r => r.status === 'CONFIRMED');
   const userCerts = certificates.filter(c => c.userId === currentUser._id);
   const userAttendance = attendance.filter(a => a.userId === currentUser._id);
 
@@ -50,6 +65,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [department, setDepartment] = useState(currentUser.department);
   const [semester, setSemester] = useState<number>(currentUser.semester || 6);
   const [phone, setPhone] = useState(currentUser.phone || '');
+  const [newPassword, setNewPassword] = useState('');
 
   // Settings State for Profile Form
   const [notificationEmail, setNotificationEmail] = useState(true);
@@ -65,7 +81,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       department: department.trim(),
       semester,
       phone: phone.trim(),
+      ...(newPassword.trim() ? { passwordHash: newPassword.trim() } : {}),
     });
+    setNewPassword('');
     setIsEditingProfile(false);
     showToast('success', 'Your DHSGSU student profile details have been saved.');
   };
@@ -80,6 +98,35 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     logout();
     if (onLogout) onLogout();
   };
+
+  const categorizedRegs = allStudentRegs.filter(reg => {
+    const evt = events.find(e => e._id === reg.eventId);
+    if (!evt) return false;
+    if (myEventsFilter === 'CANCELLED') {
+      return reg.status === 'CANCELLED' || evt.status === 'CANCELLED';
+    }
+    if (reg.status === 'CANCELLED') return myEventsFilter === 'ALL';
+    if (myEventsFilter === 'ONGOING') {
+      return evt.status === 'ONGOING' || evt.attendanceSessionStatus === 'ACTIVE';
+    }
+    if (myEventsFilter === 'COMPLETED') {
+      return evt.status === 'COMPLETED' || Boolean(reg.checkedInAt);
+    }
+    if (myEventsFilter === 'UPCOMING') {
+      return evt.status === 'PUBLISHED' && !reg.checkedInAt;
+    }
+    return true;
+  });
+
+  const registeredDevices = currentUser.registeredDevices || [
+    {
+      deviceId: currentDeviceId,
+      platform: currentPlatform,
+      deviceName: currentPlatform === 'mobile' ? 'PARISAR Android Mobile Client' : 'PARISAR Web Client',
+      verifiedAt: currentUser.createdAt || new Date().toISOString(),
+      lastActiveAt: new Date().toISOString(),
+    },
+  ];
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-16">
@@ -243,26 +290,45 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </button>
       </div>
 
-      {/* Tab 1: My Events */}
+      {/* Tab 1: My Events (Categorized: Upcoming, Ongoing, Completed, Cancelled) */}
       {activeSubTab === 'my-events' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-bold text-[#18212B]">Registered Campus Events</h2>
-              <p className="text-xs text-[#62605B]">Your confirmed event passes, attendance status, and upcoming schedules across DHSGSU.</p>
+              <h2 className="text-lg font-bold text-[#18212B]">My Registered Campus Events</h2>
+              <p className="text-xs text-[#62605B]">Track your upcoming registrations, ongoing sessions, completed attendance, and cancelled passes.</p>
             </div>
             <Button variant="outline" size="sm" onClick={onExploreEvents}>
               Explore More Events
             </Button>
           </div>
 
-          {studentRegs.length > 0 ? (
+          {/* Lifecycle Filter Pills */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            {(['ALL', 'UPCOMING', 'ONGOING', 'COMPLETED', 'CANCELLED'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setMyEventsFilter(f)}
+                className={`px-3 py-1.5 rounded-[3px] text-[11px] font-mono font-bold uppercase tracking-wider border transition-all cursor-pointer ${
+                  myEventsFilter === f
+                    ? 'bg-[#18212B] text-[#FCFAF5] border-[#18212B]'
+                    : 'bg-[#EAE5DB] text-[#62605B] border-[#B9B4AA] hover:text-[#18212B]'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+
+          {categorizedRegs.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {studentRegs.map(reg => {
+              {categorizedRegs.map(reg => {
                 const event = events.find(e => e._id === reg.eventId);
                 if (!event) return null;
 
                 const isCheckedIn = Boolean(reg.checkedInAt);
+                const attRec = userAttendance.find(a => a.eventId === event._id);
+                const isCancelledReg = reg.status === 'CANCELLED' || event.status === 'CANCELLED';
 
                 return (
                   <div
@@ -272,14 +338,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     <div className="space-y-2.5">
                       <div className="flex items-center justify-between">
                         <CategoryBadge category={event.category} />
-                        {isCheckedIn ? (
+                        {isCancelledReg ? (
+                          <span className="text-[10px] font-mono font-bold uppercase text-[#A83226] bg-[#FBEFEF] px-2 py-0.5 rounded-[2px] border border-[#A83226]/30">
+                            Cancelled
+                          </span>
+                        ) : isCheckedIn ? (
                           <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-[#2F613B] bg-[#EBF3ED] px-2 py-0.5 rounded-[2px] border border-[#2F613B]/30">
                             <CheckCircle2 className="w-3 h-3 text-[#2F613B]" />
-                            Attendance Verified
+                            Attendance Verified ({attRec?.participationPercent ?? 100}%)
+                          </span>
+                        ) : event.status === 'ONGOING' ? (
+                          <span className="text-[10px] font-mono font-bold uppercase text-[#B26B16] bg-[#FDF7EC] px-2 py-0.5 rounded-[2px] border border-[#B26B16]/30">
+                            Ongoing • Session Live
                           </span>
                         ) : (
                           <span className="text-[10px] font-mono font-bold uppercase text-[#B6533C] bg-[#FBEFEF] px-2 py-0.5 rounded-[2px] border border-[#B6533C]/30">
-                            Registered • Pass Ready
+                            Upcoming • Pass Ready
                           </span>
                         )}
                       </div>
@@ -300,18 +374,38 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       </div>
                     </div>
 
-                    <div className="pt-3 border-t border-[#B9B4AA] flex items-center justify-between">
+                    <div className="pt-3 border-t border-[#B9B4AA] flex flex-wrap items-center justify-between gap-2">
                       <div className="text-[10px] font-mono text-[#62605B]">
                         Pass ID: <strong className="text-[#18212B]">{reg.qrToken}</strong>
                       </div>
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        leftIcon={<QrCode className="w-3.5 h-3.5" />}
-                        onClick={() => onOpenPass(reg, event)}
-                      >
-                        View Event Pass
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        {!isCancelledReg && !isCheckedIn && event.status !== 'COMPLETED' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const res = cancelRegistration(reg._id);
+                              if (res.success) {
+                                showToast('info', 'Registration cancelled.');
+                              } else {
+                                showToast('error', res.error.message);
+                              }
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                        {!isCancelledReg && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            leftIcon={<QrCode className="w-3.5 h-3.5" />}
+                            onClick={() => onOpenPass(reg, event)}
+                          >
+                            View Event Pass
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -320,7 +414,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           ) : (
             <div className="p-8 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] text-center space-y-3">
               <Calendar className="w-8 h-8 text-[#62605B] mx-auto opacity-50" />
-              <h3 className="font-bold text-sm text-[#18212B]">No active registrations yet</h3>
+              <h3 className="font-bold text-sm text-[#18212B]">No events found in this category</h3>
               <p className="text-xs text-[#62605B] max-w-sm mx-auto">
                 Discover seminars, workshops, cultural events, and competitions happening across DHSGSU.
               </p>
@@ -360,7 +454,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-base font-bold text-[#18212B]">Student Profile & Preferences</h2>
-                <p className="text-xs text-[#62605B] mt-0.5">Manage your DHSGSU student details, communication channels, and alerts.</p>
+                <p className="text-xs text-[#62605B] mt-0.5">Manage your DHSGSU student details, verified devices, and operational alerts.</p>
               </div>
               {!isEditingProfile && (
                 <Button
@@ -385,7 +479,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             {isEditingProfile ? (
               <form onSubmit={handleSaveProfile} className="space-y-4 pt-3 border-t border-[#B9B4AA]">
                 <div className="text-xs font-bold uppercase tracking-wider text-[#B6533C]">
-                  Edit Student Profile
+                  Edit Student Profile & Password
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div className="space-y-1">
@@ -429,13 +523,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-1 sm:col-span-2">
+                  <div className="space-y-1">
                     <label className="font-bold text-[#18212B]">Contact Phone</label>
                     <input
                       type="tel"
                       value={phone}
                       onChange={e => setPhone(e.target.value)}
                       placeholder="+91 98260 12345"
+                      className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] font-mono text-[#18212B] focus:outline-none focus:border-[#18212B]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="font-bold text-[#18212B]">Change Password (Optional)</label>
+                    <input
+                      type="password"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      placeholder="Leave blank to keep current password"
                       className="w-full px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] font-mono text-[#18212B] focus:outline-none focus:border-[#18212B]"
                     />
                   </div>
@@ -484,6 +588,73 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Device & Session Binding (1 Web + 1 Mobile Rule) */}
+            <div className="space-y-3 pt-3 border-t border-[#B9B4AA]">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-[#18212B]">
+                    Verified Device & Session Binding (1 Web + 1 Mobile Limit)
+                  </div>
+                  <p className="text-[11px] text-[#62605B] mt-0.5">
+                    To prevent proxy attendance, each PARISAR account binds at most 1 verified Web session and 1 verified Android Mobile device.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      verifyOrReplaceDevice('web', 'PARISAR Web Browser');
+                      showToast('success', 'Current Web Browser verified and bound to your account.');
+                    }}
+                  >
+                    Verify Web Device
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      verifyOrReplaceDevice('mobile', 'PARISAR Android App');
+                      showToast('success', 'Android Mobile Device slot verified and updated.');
+                    }}
+                  >
+                    Bind Mobile Slot
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {registeredDevices.map(dev => (
+                  <div
+                    key={dev.deviceId}
+                    className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] flex items-center justify-between gap-2"
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded-[2px] bg-[#18212B] text-[#FCFAF5] text-[9px] font-mono font-bold uppercase">
+                          {dev.platform}
+                        </span>
+                        <span className="font-bold text-[#18212B]">{dev.deviceName}</span>
+                      </div>
+                      <div className="text-[10px] font-mono text-[#62605B] mt-1">
+                        ID: {dev.deviceId} • Verified {new Date(dev.verifiedAt).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        revokeDevice(dev.deviceId);
+                        showToast('info', `Revoked ${dev.deviceName}.`);
+                      }}
+                      className="px-2 py-1 text-[10px] font-bold text-[#A83226] bg-[#FBEFEF] border border-[#A83226]/30 rounded-[2px] cursor-pointer"
+                    >
+                      Revoke
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
 
             {/* Notification Channels */}
             <div className="space-y-3 pt-3 border-t border-[#B9B4AA]">

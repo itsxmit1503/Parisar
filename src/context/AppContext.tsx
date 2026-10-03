@@ -34,8 +34,10 @@ interface AppContextType {
   currentUser: User;
   isAuthenticated: boolean;
   authToken: string | null;
+  currentDeviceId: string;
+  currentPlatform: 'web' | 'mobile';
   setCurrentUserId: (id: string) => void;
-  loginWithCredentials: (identifier: string, password?: string, adminOnly?: boolean) => Promise<ApiResponse<User>>;
+  loginWithCredentials: (identifier: string, password?: string, adminOnly?: boolean, replaceDevice?: boolean) => Promise<ApiResponse<User>>;
   registerStudentAccount: (data: {
     name: string;
     rollNumber: string;
@@ -55,7 +57,9 @@ interface AppContextType {
     password?: string;
   }) => Promise<ApiResponse<User>>;
   resubmitOrganizerVerification: (reason: string, designation?: string, department?: string) => ApiResponse<OrganizerVerificationRequest>;
-  updateUserProfile: (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization'>>) => ApiResponse<User>;
+  updateUserProfile: (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization' | 'passwordHash'>>) => ApiResponse<User>;
+  verifyOrReplaceDevice: (platform: 'web' | 'mobile', deviceName?: string) => ApiResponse<User>;
+  revokeDevice: (deviceId: string) => ApiResponse<User>;
   logout: () => void;
   allUsers: User[];
   
@@ -77,19 +81,25 @@ interface AppContextType {
   markAllNotificationsAsRead: () => void;
   getRecommendedEvents: () => CampusEvent[];
   getStudentPassportStats: (userId?: string) => PassportStats;
+  joinOrValidateOnlineAttendance: (eventId: string, addMinutes?: number) => ApiResponse<AttendanceRecord>;
   
   // Organizer Actions
   createEvent: (eventData: Omit<CampusEvent, '_id' | 'organizerId' | 'organizerName' | 'organizerEmail' | 'registrationCount' | 'createdAt' | 'updatedAt'>, asDraft?: boolean) => ApiResponse<CampusEvent>;
   updateEvent: (eventId: string, updates: Partial<CampusEvent>) => ApiResponse<CampusEvent>;
   verifyAndCheckIn: (eventId: string, qrToken: string, method?: 'qr' | 'manual') => ScanVerificationResult;
+  startAttendanceSession: (eventId: string) => ApiResponse<CampusEvent>;
+  closeAttendanceSession: (eventId: string) => ApiResponse<CampusEvent>;
+  updateParticipantParticipation: (attendanceId: string, participatedMinutes: number, sessionStatus?: AttendanceRecord['sessionStatus']) => ApiResponse<AttendanceRecord>;
   sendAnnouncement: (eventId: string, title: string, message: string) => ApiResponse<number>;
   issueCertificatesForEvent: (eventId: string) => ApiResponse<number>;
+  getEventConflicts: (venueId: string, startTime: string, endTime: string, excludeEventId?: string) => CampusEvent[];
   
   // Admin Actions
   organizerRequests: OrganizerVerificationRequest[];
   adminReviewOrganizerRequest: (requestId: string, approve: boolean, remarks?: string) => ApiResponse<OrganizerVerificationRequest>;
-  adminModerateEvent: (eventId: string, newStatus: EventStatus) => ApiResponse<CampusEvent>;
+  adminModerateEvent: (eventId: string, newStatus: EventStatus, rejectionReason?: string) => ApiResponse<CampusEvent>;
   adminUpdateUserRole: (userId: string, newRole: User['role']) => ApiResponse<User>;
+  sendUniversityAnnouncement: (title: string, message: string, targetAudience?: 'ALL' | 'STUDENTS' | 'ORGANIZERS') => ApiResponse<number>;
   
   // Prototype controls
   resetPrototypeData: () => void;
@@ -144,16 +154,38 @@ function normalizeEventVenues(eventsList: CampusEvent[]): CampusEvent[] {
     const seedEvt = INITIAL_EVENTS.find(se => se._id === evt._id);
     const mappedId = seedEvt ? seedEvt.venueId : (LEGACY_VENUE_ID_MAP[evt.venueId] || evt.venueId);
     const matchedVenue = CAMPUS_VENUES.find(v => v.id === mappedId);
+    // Keep updated start/end/deadline from INITIAL_EVENTS if cached event had old September 2026 deadline
+    const shouldRefreshDates = seedEvt && new Date(evt.registrationDeadline).getTime() < new Date('2026-10-03T00:00:00Z').getTime();
     if (matchedVenue) {
       return {
         ...evt,
         venueId: matchedVenue.id,
         venue: matchedVenue.name,
         description: seedEvt ? seedEvt.description : evt.description,
+        startTime: shouldRefreshDates ? seedEvt.startTime : evt.startTime,
+        endTime: shouldRefreshDates ? seedEvt.endTime : evt.endTime,
+        registrationDeadline: shouldRefreshDates ? seedEvt.registrationDeadline : evt.registrationDeadline,
+        eventMode: evt.eventMode || seedEvt?.eventMode || 'OFFLINE',
+        certificateRequired: evt.certificateRequired ?? seedEvt?.certificateRequired ?? true,
+        minParticipationPercent: evt.minParticipationPercent ?? seedEvt?.minParticipationPercent ?? 80,
+        attendanceSessionStatus: evt.attendanceSessionStatus || seedEvt?.attendanceSessionStatus || 'NOT_STARTED',
       };
     }
-    return evt;
+    return {
+      ...evt,
+      eventMode: evt.eventMode || 'OFFLINE',
+      certificateRequired: evt.certificateRequired ?? true,
+      minParticipationPercent: evt.minParticipationPercent ?? 80,
+      attendanceSessionStatus: evt.attendanceSessionStatus || 'NOT_STARTED',
+    };
   });
+}
+
+function getEventDurationMinutes(evt: CampusEvent): number {
+  const start = new Date(evt.startTime).getTime();
+  const end = new Date(evt.endTime).getTime();
+  const diff = Math.round((end - start) / (1000 * 60));
+  return diff > 0 ? Math.min(diff, 720) : 180;
 }
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -162,6 +194,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [currentUserId, setCurrentUserIdState] = useState<string>('student-1');
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string>('parisar-web-default');
+  const [currentPlatform, setCurrentPlatform] = useState<'web' | 'mobile'>('web');
   const [allUsers, setAllUsers] = useState<User[]>(INITIAL_USERS);
   const [events, setEvents] = useState<CampusEvent[]>(INITIAL_EVENTS);
   const [venues] = useState<CampusVenue[]>(CAMPUS_VENUES);
@@ -176,8 +210,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     let localUsersSnapshot: User[] = INITIAL_USERS;
     let localReqsSnapshot: OrganizerVerificationRequest[] = INITIAL_ORGANIZER_REQUESTS;
+    let localEventsSnapshot: CampusEvent[] = INITIAL_EVENTS;
+    let localRegsSnapshot: Registration[] = INITIAL_REGISTRATIONS;
+    let localAttSnapshot: AttendanceRecord[] = INITIAL_ATTENDANCE;
+    let localCertsSnapshot: Certificate[] = INITIAL_CERTIFICATES;
+    let localNotifsSnapshot: CampusNotification[] = INITIAL_NOTIFICATIONS;
 
     try {
+      // Determine client platform & persistent device fingerprint ID
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+      const isAndroidWebView = /Android|wv|Capacitor/i.test(ua);
+      const detectedPlatform: 'web' | 'mobile' = isAndroidWebView ? 'mobile' : 'web';
+      setCurrentPlatform(detectedPlatform);
+
+      let storedDeviceId = localStorage.getItem(`${STORAGE_PREFIX}deviceId`);
+      if (!storedDeviceId) {
+        storedDeviceId = `parisar-${detectedPlatform}-${Math.random().toString(36).slice(2, 10)}`;
+        localStorage.setItem(`${STORAGE_PREFIX}deviceId`, storedDeviceId);
+      }
+      setCurrentDeviceId(storedDeviceId);
+
       const storedUsers = localStorage.getItem(`${STORAGE_PREFIX}users`);
       if (storedUsers) {
         localUsersSnapshot = mergeUsersList(INITIAL_USERS, JSON.parse(storedUsers));
@@ -185,19 +237,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const storedEvents = localStorage.getItem(`${STORAGE_PREFIX}events`);
-      if (storedEvents) setEvents(normalizeEventVenues(JSON.parse(storedEvents)));
+      if (storedEvents) {
+        localEventsSnapshot = normalizeEventVenues(JSON.parse(storedEvents));
+        setEvents(localEventsSnapshot);
+      }
 
       const storedRegs = localStorage.getItem(`${STORAGE_PREFIX}registrations`);
-      if (storedRegs) setRegistrations(JSON.parse(storedRegs));
+      if (storedRegs) {
+        localRegsSnapshot = JSON.parse(storedRegs);
+        setRegistrations(localRegsSnapshot);
+      }
 
       const storedAtt = localStorage.getItem(`${STORAGE_PREFIX}attendance`);
-      if (storedAtt) setAttendance(JSON.parse(storedAtt));
+      if (storedAtt) {
+        localAttSnapshot = JSON.parse(storedAtt);
+        setAttendance(localAttSnapshot);
+      }
 
       const storedCerts = localStorage.getItem(`${STORAGE_PREFIX}certificates`);
-      if (storedCerts) setCertificates(JSON.parse(storedCerts));
+      if (storedCerts) {
+        localCertsSnapshot = JSON.parse(storedCerts);
+        setCertificates(localCertsSnapshot);
+      }
 
       const storedNotifs = localStorage.getItem(`${STORAGE_PREFIX}notifications`);
-      if (storedNotifs) setNotifications(JSON.parse(storedNotifs));
+      if (storedNotifs) {
+        localNotifsSnapshot = JSON.parse(storedNotifs);
+        setNotifications(localNotifsSnapshot);
+      }
 
       const storedFb = localStorage.getItem(`${STORAGE_PREFIX}feedback`);
       if (storedFb) setFeedback(JSON.parse(storedFb));
@@ -222,7 +289,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsLoaded(true);
     }
 
-    // Sync any locally cached accounts up to the shared server database AND pull shared accounts down
+    // Sync any locally cached state up to the shared server database AND pull shared state down
     (async () => {
       try {
         const res = await fetch('/api/v1/auth', {
@@ -232,6 +299,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             action: 'sync-state',
             users: localUsersSnapshot,
             organizerRequests: localReqsSnapshot,
+            events: localEventsSnapshot,
+            registrations: localRegsSnapshot,
+            attendance: localAttSnapshot,
+            certificates: localCertsSnapshot,
+            notifications: localNotifsSnapshot,
           }),
         });
         if (res.ok) {
@@ -243,6 +315,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             if (Array.isArray(payload.data.organizerRequests)) {
               setOrganizerRequests(payload.data.organizerRequests);
             }
+            if (Array.isArray(payload.data.events)) {
+              setEvents(normalizeEventVenues(payload.data.events));
+            }
+            if (Array.isArray(payload.data.registrations)) {
+              setRegistrations(payload.data.registrations);
+            }
+            if (Array.isArray(payload.data.attendance)) {
+              setAttendance(payload.data.attendance);
+            }
+            if (Array.isArray(payload.data.certificates)) {
+              setCertificates(payload.data.certificates);
+            }
+            if (Array.isArray(payload.data.notifications)) {
+              setNotifications(payload.data.notifications);
+            }
           }
         }
       } catch {
@@ -251,7 +338,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     })();
   }, []);
 
-  // Save session cache when collections change
+  // Save session cache when collections change & keep shared server store synchronized
   useEffect(() => {
     if (!isLoaded) return;
     try {
@@ -273,6 +360,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch (e) {
       console.warn('Storage quota or persistence warning:', e);
     }
+
+    fetch('/api/v1/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'sync-state',
+        users: allUsers,
+        organizerRequests,
+        events,
+        registrations,
+        attendance,
+        certificates,
+        notifications,
+      }),
+    }).catch(() => {});
   }, [isLoaded, allUsers, events, registrations, attendance, certificates, notifications, feedback, organizerRequests, currentUserId, isAuthenticated, authToken]);
 
   const currentUser = allUsers.find(u => u._id === currentUserId) || allUsers[0];
@@ -293,10 +395,55 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const verifyOrReplaceDevice = (platform: 'web' | 'mobile', deviceName?: string): ApiResponse<User> => {
+    const nowIso = new Date().toISOString();
+    const targetDeviceId = platform === currentPlatform
+      ? currentDeviceId
+      : `parisar-${platform}-${Math.random().toString(36).slice(2, 8)}`;
+    const label = deviceName?.trim() || (platform === 'mobile' ? 'PARISAR Android App (Capacitor)' : 'PARISAR Web Browser Session');
+
+    const existingDevices = Array.isArray(currentUser.registeredDevices)
+      ? currentUser.registeredDevices.filter(d => d.platform !== platform)
+      : [];
+
+    const updatedDevices = [
+      ...existingDevices,
+      {
+        deviceId: targetDeviceId,
+        platform,
+        deviceName: label,
+        verifiedAt: nowIso,
+        lastActiveAt: nowIso,
+      },
+    ];
+
+    const updatedUser: User = {
+      ...currentUser,
+      registeredDevices: updatedDevices,
+      updatedAt: nowIso,
+    };
+
+    setAllUsers(prev => prev.map(u => (u._id === currentUser._id ? updatedUser : u)));
+    return { success: true, data: updatedUser };
+  };
+
+  const revokeDevice = (deviceId: string): ApiResponse<User> => {
+    const nowIso = new Date().toISOString();
+    const updatedDevices = (currentUser.registeredDevices || []).filter(d => d.deviceId !== deviceId);
+    const updatedUser: User = {
+      ...currentUser,
+      registeredDevices: updatedDevices,
+      updatedAt: nowIso,
+    };
+    setAllUsers(prev => prev.map(u => (u._id === currentUser._id ? updatedUser : u)));
+    return { success: true, data: updatedUser };
+  };
+
   const loginWithCredentials = async (
     identifier: string,
     password?: string,
-    adminOnly = false
+    adminOnly = false,
+    replaceDevice = true
   ): Promise<ApiResponse<User>> => {
     const cleanId = identifier.trim().toLowerCase();
     if (!cleanId) {
@@ -328,6 +475,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           action: 'sync-state',
           users: allUsers,
           organizerRequests,
+          events,
+          registrations,
+          attendance,
+          certificates,
+          notifications,
         }),
       });
 
@@ -339,6 +491,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           identifier: identifier.trim(),
           password,
           adminOnly,
+          deviceId: currentDeviceId,
+          platform: currentPlatform,
+          deviceName: currentPlatform === 'mobile' ? 'PARISAR Android Mobile Client' : 'PARISAR Web Client',
+          replaceExistingDevice: replaceDevice,
         }),
       });
 
@@ -352,6 +508,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
         if (Array.isArray(payload.data.organizerRequests)) {
           setOrganizerRequests(payload.data.organizerRequests);
+        }
+        if (Array.isArray(payload.data.events)) {
+          setEvents(normalizeEventVenues(payload.data.events));
+        }
+        if (Array.isArray(payload.data.registrations)) {
+          setRegistrations(payload.data.registrations);
+        }
+        if (Array.isArray(payload.data.attendance)) {
+          setAttendance(payload.data.attendance);
+        }
+        if (Array.isArray(payload.data.certificates)) {
+          setCertificates(payload.data.certificates);
+        }
+        if (Array.isArray(payload.data.notifications)) {
+          setNotifications(payload.data.notifications);
         }
         setCurrentUserIdState(authedUser._id);
         setAuthToken(payload.data.token || `parisar_session_${authedUser._id}`);
@@ -407,10 +578,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
+    const nowIso = new Date().toISOString();
+    const updatedDevices = [
+      ...(found.registeredDevices || []).filter(d => d.platform !== currentPlatform),
+      {
+        deviceId: currentDeviceId,
+        platform: currentPlatform,
+        deviceName: currentPlatform === 'mobile' ? 'PARISAR Android Mobile Client' : 'PARISAR Web Client',
+        verifiedAt: nowIso,
+        lastActiveAt: nowIso,
+      },
+    ];
+    const updatedFound: User = { ...found, registeredDevices: updatedDevices, updatedAt: nowIso };
+    setAllUsers(prev => prev.map(u => (u._id === found._id ? updatedFound : u)));
     setCurrentUserIdState(found._id);
     setAuthToken(`parisar_session_${found._id}`);
     setIsAuthenticated(true);
-    return { success: true, data: found };
+    return { success: true, data: updatedFound };
   };
 
   const registerStudentAccount = async (data: {
@@ -510,6 +694,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       interests: ['Workshop', 'Seminar', 'Cultural', 'Competition'],
       profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
       phone: '+91 98260 00000',
+      registeredDevices: [
+        {
+          deviceId: currentDeviceId,
+          platform: currentPlatform,
+          deviceName: currentPlatform === 'mobile' ? 'PARISAR Android Mobile Client' : 'PARISAR Web Client',
+          verifiedAt: nowIso,
+          lastActiveAt: nowIso,
+        },
+      ],
       createdAt: nowIso,
       updatedAt: nowIso,
     };
@@ -685,7 +878,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, data: updatedReq };
   };
 
-  const updateUserProfile = (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization'>>): ApiResponse<User> => {
+  const updateUserProfile = (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization' | 'passwordHash'>>): ApiResponse<User> => {
     const nowIso = new Date().toISOString();
     const updatedUser: User = {
       ...currentUser,
@@ -732,11 +925,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Requested event could not be found.' } };
     }
 
-    if (targetEvent.status !== 'PUBLISHED' && targetEvent.status !== 'APPROVED') {
+    if (targetEvent.status !== 'PUBLISHED' && targetEvent.status !== 'APPROVED' && targetEvent.status !== 'ONGOING') {
       return { success: false, error: { code: 'EVENT_NOT_OPEN', message: 'Registration is only open for officially approved DHSGSU events.' } };
     }
 
-    const now = new Date('2026-09-30T10:00:00Z');
+    const now = new Date();
     const deadline = new Date(targetEvent.registrationDeadline);
     if (now > deadline) {
       return { success: false, error: { code: 'REGISTRATION_CLOSED', message: 'The registration deadline for this event has passed.' } };
@@ -823,6 +1016,87 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, data: true };
   };
 
+  const joinOrValidateOnlineAttendance = (eventId: string, addMinutes = 45): ApiResponse<AttendanceRecord> => {
+    const targetEvent = events.find(e => e._id === eventId);
+    if (!targetEvent) {
+      return { success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Event not found.' } };
+    }
+
+    if (targetEvent.attendanceSessionStatus !== 'ACTIVE' && targetEvent.status !== 'ONGOING') {
+      return {
+        success: false,
+        error: {
+          code: 'ATTENDANCE_NOT_ACTIVE',
+          message: 'Attendance session has not been started by the Organizer yet.',
+        },
+      };
+    }
+
+    const reg = registrations.find(r => r.eventId === eventId && r.userId === currentUser._id && r.status === 'CONFIRMED');
+    if (!reg) {
+      return {
+        success: false,
+        error: {
+          code: 'NOT_REGISTERED',
+          message: 'You must hold a confirmed registration pass before joining the attendance session.',
+        },
+      };
+    }
+
+    const totalMinutes = getEventDurationMinutes(targetEvent);
+    const minPct = targetEvent.minParticipationPercent ?? 80;
+    const requiredMinutes = Math.ceil((totalMinutes * minPct) / 100);
+    const nowIso = new Date().toISOString();
+
+    const existingAtt = attendance.find(a => a.eventId === eventId && a.userId === currentUser._id);
+    if (existingAtt) {
+      const nextMinutes = Math.min(totalMinutes, (existingAtt.participatedMinutes ?? 45) + addMinutes);
+      const nextPct = Math.min(100, Math.round((nextMinutes / totalMinutes) * 100));
+      const eligible = nextPct >= minPct;
+
+      const updatedRecord: AttendanceRecord = {
+        ...existingAtt,
+        participatedMinutes: nextMinutes,
+        requiredMinutes,
+        totalEventMinutes: totalMinutes,
+        participationPercent: nextPct,
+        sessionStatus: nextMinutes >= totalMinutes ? 'COMPLETED' : 'ACTIVE',
+        lastValidatedAt: nowIso,
+        eligibleForCertificate: eligible,
+      };
+
+      setAttendance(prev => prev.map(a => (a._id === existingAtt._id ? updatedRecord : a)));
+      return { success: true, data: updatedRecord };
+    }
+
+    const initialMinutes = Math.min(totalMinutes, Math.max(30, addMinutes));
+    const initialPct = Math.min(100, Math.round((initialMinutes / totalMinutes) * 100));
+    const newRecord: AttendanceRecord = {
+      _id: `att-${Date.now()}`,
+      eventId,
+      registrationId: reg._id,
+      userId: currentUser._id,
+      userName: currentUser.name,
+      userRollNumber: currentUser.rollNumber || 'N/A',
+      userDepartment: currentUser.department,
+      checkedInAt: nowIso,
+      checkedInBy: 'ONLINE_SESSION_HEARTBEAT',
+      method: 'online_session',
+      participatedMinutes: initialMinutes,
+      requiredMinutes,
+      totalEventMinutes: totalMinutes,
+      participationPercent: initialPct,
+      sessionStatus: 'ACTIVE',
+      lastValidatedAt: nowIso,
+      eligibleForCertificate: initialPct >= minPct,
+    };
+
+    setRegistrations(prev => prev.map(r => (r._id === reg._id ? { ...r, checkedInAt: nowIso } : r)));
+    setAttendance(prev => [newRecord, ...prev]);
+
+    return { success: true, data: newRecord };
+  };
+
   const submitFeedback = (eventId: string, rating: number, comment: string): ApiResponse<EventFeedback> => {
     // Check if user attended
     const attended = attendance.some(a => a.eventId === eventId && a.userId === currentUser._id);
@@ -899,12 +1173,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const attendedEventIds = new Set(userAttended.map(a => a.eventId));
     const attendedEvents = events.filter(e => attendedEventIds.has(e._id));
 
-    const workshopsCount = attendedEvents.filter(e => e.category === 'Workshops').length;
-    const seminarsCount = attendedEvents.filter(e => e.category === 'Seminars').length;
-    const competitionsCount = attendedEvents.filter(e => e.category === 'Competitions').length;
-    const culturalCount = attendedEvents.filter(e => e.category === 'Cultural').length;
+    const workshopsCount = attendedEvents.filter(e => e.category === 'Workshops' || e.category === 'Workshop').length;
+    const seminarsCount = attendedEvents.filter(e => e.category === 'Seminars' || e.category === 'Seminar').length;
+    const competitionsCount = attendedEvents.filter(e => e.category === 'Competitions' || e.category === 'Competition' || e.category === 'Coding').length;
+    const culturalCount = attendedEvents.filter(e => e.category === 'Cultural' || e.category === 'Cultural Events').length;
     const sportsCount = attendedEvents.filter(e => e.category === 'Sports').length;
-    const careerCount = attendedEvents.filter(e => e.category === 'Career').length;
+    const careerCount = attendedEvents.filter(e => e.category === 'Career' || e.category === 'Placement' || e.category === 'Entrepreneurship').length;
 
     const certsCount = certificates.filter(c => c.userId === userId).length;
 
@@ -931,6 +1205,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // ==========================================
+  // Venue & Schedule Conflict Detection Helper
+  // ==========================================
+  const getEventConflicts = (
+    venueId: string,
+    startTime: string,
+    endTime: string,
+    excludeEventId?: string
+  ): CampusEvent[] => {
+    if (!venueId || !startTime || !endTime) return [];
+    const startA = new Date(startTime).getTime();
+    const endA = new Date(endTime).getTime();
+    if (isNaN(startA) || isNaN(endA) || endA <= startA) return [];
+
+    return events.filter(e => {
+      if (excludeEventId && e._id === excludeEventId) return false;
+      if (e.status === 'REJECTED' || e.status === 'CANCELLED' || e.status === 'DRAFT') return false;
+      if (e.venueId !== venueId) return false;
+      const startB = new Date(e.startTime).getTime();
+      const endB = new Date(e.endTime).getTime();
+      return startA < endB && endA > startB;
+    });
+  };
+
+  // ==========================================
   // Organizer Operations (Sections 19, 26, 27, 28, 47)
   // ==========================================
   const createEvent = (
@@ -941,8 +1239,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Title, venue, and valid capacity are mandatory.' } };
     }
 
+    const startMs = new Date(eventData.startTime).getTime();
+    const endMs = new Date(eventData.endTime).getTime();
+    const deadlineMs = new Date(eventData.registrationDeadline).getTime();
+
+    if (endMs <= startMs) {
+      return {
+        success: false,
+        error: { code: 'INVALID_TIME_WINDOW', message: 'Event end time must be after the start time.' },
+      };
+    }
+
+    if (deadlineMs > startMs) {
+      return {
+        success: false,
+        error: { code: 'INVALID_DEADLINE', message: 'Registration deadline must be before the event start time.' },
+      };
+    }
+
     const newEvent: CampusEvent = {
       ...eventData,
+      eventMode: eventData.eventMode || 'OFFLINE',
+      certificateRequired: eventData.certificateRequired ?? true,
+      minParticipationPercent: eventData.minParticipationPercent ?? 80,
+      attendanceSessionStatus: 'NOT_STARTED',
       _id: `evt-${Date.now()}`,
       organizerId: currentUser._id,
       organizerName: currentUser.name,
@@ -987,6 +1307,117 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     setEvents(prev => prev.map(e => e._id === eventId ? updated : e));
     return { success: true, data: updated };
+  };
+
+  const startAttendanceSession = (eventId: string): ApiResponse<CampusEvent> => {
+    const existing = events.find(e => e._id === eventId);
+    if (!existing) {
+      return { success: false, error: { code: 'NOT_FOUND', message: 'Event not found.' } };
+    }
+
+    const nowIso = new Date().toISOString();
+    const updated: CampusEvent = {
+      ...existing,
+      status: existing.status === 'PUBLISHED' || existing.status === 'APPROVED' ? 'ONGOING' : existing.status,
+      attendanceSessionStatus: 'ACTIVE',
+      attendanceStartedAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    setEvents(prev => prev.map(e => (e._id === eventId ? updated : e)));
+
+    // Notify registered students that attendance session is live
+    const registeredUsers = registrations.filter(r => r.eventId === eventId && r.status === 'CONFIRMED');
+    if (registeredUsers.length > 0) {
+      const sessionNotifs: CampusNotification[] = registeredUsers.map(reg => ({
+        _id: `notif-att-start-${Date.now()}-${reg.userId}`,
+        userId: reg.userId,
+        eventId,
+        type: 'EVENT_REMINDER',
+        title: `Attendance Open: ${existing.title}`,
+        message: `Live attendance validation has started for "${existing.title}". Minimum required participation is ${existing.minParticipationPercent ?? 80}%.`,
+        read: false,
+        createdAt: nowIso,
+      }));
+      setNotifications(prev => [...sessionNotifs, ...prev]);
+    }
+
+    return { success: true, data: updated };
+  };
+
+  const closeAttendanceSession = (eventId: string): ApiResponse<CampusEvent> => {
+    const existing = events.find(e => e._id === eventId);
+    if (!existing) {
+      return { success: false, error: { code: 'NOT_FOUND', message: 'Event not found.' } };
+    }
+
+    const nowIso = new Date().toISOString();
+    const totalMinutes = getEventDurationMinutes(existing);
+    const minPct = existing.minParticipationPercent ?? 80;
+    const requiredMinutes = Math.ceil((totalMinutes * minPct) / 100);
+
+    // Finalize participation records for this event
+    setAttendance(prev =>
+      prev.map(att => {
+        if (att.eventId !== eventId) return att;
+        const partMins = att.participatedMinutes ?? totalMinutes;
+        const pct = Math.min(100, Math.round((partMins / totalMinutes) * 100));
+        return {
+          ...att,
+          participatedMinutes: partMins,
+          requiredMinutes,
+          totalEventMinutes: totalMinutes,
+          participationPercent: pct,
+          sessionStatus: 'COMPLETED',
+          lastValidatedAt: nowIso,
+          eligibleForCertificate: pct >= minPct,
+        };
+      })
+    );
+
+    const updated: CampusEvent = {
+      ...existing,
+      status: 'COMPLETED',
+      attendanceSessionStatus: 'CLOSED',
+      attendanceClosedAt: nowIso,
+      updatedAt: nowIso,
+    };
+
+    setEvents(prev => prev.map(e => (e._id === eventId ? updated : e)));
+    return { success: true, data: updated };
+  };
+
+  const updateParticipantParticipation = (
+    attendanceId: string,
+    participatedMinutes: number,
+    sessionStatus?: AttendanceRecord['sessionStatus']
+  ): ApiResponse<AttendanceRecord> => {
+    const existing = attendance.find(a => a._id === attendanceId);
+    if (!existing) {
+      return { success: false, error: { code: 'NOT_FOUND', message: 'Attendance record not found.' } };
+    }
+
+    const evt = events.find(e => e._id === existing.eventId);
+    const totalMinutes = evt ? getEventDurationMinutes(evt) : (existing.totalEventMinutes || 180);
+    const minPct = evt?.minParticipationPercent ?? 80;
+    const requiredMinutes = Math.ceil((totalMinutes * minPct) / 100);
+    const clampedMinutes = Math.max(0, Math.min(totalMinutes, Math.round(participatedMinutes)));
+    const pct = Math.min(100, Math.round((clampedMinutes / totalMinutes) * 100));
+    const eligible = pct >= minPct;
+
+    const updatedRecord: AttendanceRecord = {
+      ...existing,
+      participatedMinutes: clampedMinutes,
+      requiredMinutes,
+      totalEventMinutes: totalMinutes,
+      participationPercent: pct,
+      sessionStatus: sessionStatus || existing.sessionStatus || 'ACTIVE',
+      lastValidatedAt: new Date().toISOString(),
+      eligibleForCertificate: eligible,
+    };
+
+    setAttendance(prev => prev.map(a => (a._id === attendanceId ? updatedRecord : a)));
+    return { success: true, data: updatedRecord };
   };
 
   // QR Attendance Verification (Section 19 & 47)
@@ -1044,8 +1475,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    // 4. Valid check-in: record attendance atomically
+    // 4. Valid check-in: record attendance with duration & threshold tracking
     const nowIso = new Date().toISOString();
+    const totalMinutes = getEventDurationMinutes(currentEvent);
+    const minPct = currentEvent.minParticipationPercent ?? 80;
+    const requiredMinutes = Math.ceil((totalMinutes * minPct) / 100);
+
     const newRecord: AttendanceRecord = {
       _id: `att-${Date.now()}`,
       eventId,
@@ -1057,6 +1492,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       checkedInAt: nowIso,
       checkedInBy: currentUser._id,
       method,
+      participatedMinutes: totalMinutes,
+      requiredMinutes,
+      totalEventMinutes: totalMinutes,
+      participationPercent: 100,
+      sessionStatus: 'ACTIVE',
+      lastValidatedAt: nowIso,
+      eligibleForCertificate: true,
     };
 
     setRegistrations(prev => prev.map(r => r._id === reg._id ? { ...r, checkedInAt: nowIso } : r));
@@ -1064,7 +1506,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return {
       status: 'SUCCESS',
-      message: `Verified: ${reg.userName} (${reg.userRollNumber}) marked present.`,
+      message: `Verified: ${reg.userName} (${reg.userRollNumber}) marked present (${totalMinutes} min / 100% threshold eligible).`,
       registration: { ...reg, checkedInAt: nowIso },
       event: currentEvent,
       attendee,
@@ -1099,10 +1541,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const event = events.find(e => e._id === eventId);
     if (!event) return { success: false, error: { code: 'NOT_FOUND', message: 'Event not found.' } };
 
-    // Get all verified attendees
-    const verifiedAttendees = attendance.filter(a => a.eventId === eventId);
+    const minPct = event.minParticipationPercent ?? 80;
+
+    // Get all verified attendees who meet the minimum participation threshold
+    const verifiedAttendees = attendance.filter(a => {
+      if (a.eventId !== eventId) return false;
+      const pct = a.participationPercent ?? 100;
+      const eligible = a.eligibleForCertificate ?? (pct >= minPct);
+      return eligible;
+    });
+
     if (verifiedAttendees.length === 0) {
-      return { success: false, error: { code: 'NO_ATTENDANCE', message: 'No verified attendees found to issue certificates.' } };
+      return {
+        success: false,
+        error: {
+          code: 'NO_ELIGIBLE_ATTENDANCE',
+          message: `No attendees meet the minimum ${minPct}% participation requirement for certificate issuance.`,
+        },
+      };
     }
 
     // Filter out already issued
@@ -1110,7 +1566,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const eligibleAttendees = verifiedAttendees.filter(a => !issuedUserIds.has(a.userId));
 
     if (eligibleAttendees.length === 0) {
-      return { success: false, error: { code: 'ALREADY_ISSUED', message: 'Certificates have already been issued to all verified attendees.' } };
+      return { success: false, error: { code: 'ALREADY_ISSUED', message: 'Certificates have already been issued to all threshold-eligible attendees.' } };
     }
 
     const nowIso = new Date().toISOString();
@@ -1129,6 +1585,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         issuedAt: nowIso,
         certificateType: 'PARTICIPATION',
         issueAuthorizedBy: `${currentUser.name} & Prof. S.P. Gautam (DSW)`,
+        academicAuthority: "Office of the Dean of Students' Welfare (DSW), DHSGSU",
+        participationPercent: att.participationPercent ?? 100,
+        participatedMinutes: att.participatedMinutes,
       };
     });
 
@@ -1138,7 +1597,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       eventId: event._id,
       type: 'CERTIFICATE_ISSUED',
       title: `Certificate Issued: ${event.title}`,
-      message: `Your verified certificate for "${event.title}" is ready in your Event Passport.`,
+      message: `Your verified certificate for "${event.title}" (${att.participationPercent ?? 100}% participation) is ready in your Event Passport.`,
       read: false,
       createdAt: nowIso,
     }));
@@ -1152,18 +1611,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // ==========================================
   // Admin Operations (Section 32)
   // ==========================================
-  const adminModerateEvent = (eventId: string, newStatus: EventStatus): ApiResponse<CampusEvent> => {
+  const adminModerateEvent = (eventId: string, newStatus: EventStatus, rejectionReason?: string): ApiResponse<CampusEvent> => {
     const existing = events.find(e => e._id === eventId);
     if (!existing) return { success: false, error: { code: 'NOT_FOUND', message: 'Event not found.' } };
 
+    // If approving/publishing, check for hard venue schedule conflicts
+    if (newStatus === 'PUBLISHED' || newStatus === 'APPROVED') {
+      const conflicts = getEventConflicts(existing.venueId, existing.startTime, existing.endTime, existing._id);
+      if (conflicts.length > 0) {
+        return {
+          success: false,
+          error: {
+            code: 'VENUE_CONFLICT',
+            message: `Schedule conflict at ${existing.venue} with "${conflicts[0].title}". Resolve venue or timing before publishing.`,
+          },
+        };
+      }
+    }
+
+    const nowIso = new Date().toISOString();
     const updated: CampusEvent = {
       ...existing,
       status: newStatus,
-      updatedAt: new Date().toISOString(),
+      rejectionReason: newStatus === 'REJECTED' ? (rejectionReason || 'Returned by University Administration for revision.') : undefined,
+      updatedAt: nowIso,
     };
 
     setEvents(prev => prev.map(e => e._id === eventId ? updated : e));
+
+    // Notify the event organizer of approval or rejection
+    if (newStatus === 'PUBLISHED' || newStatus === 'REJECTED') {
+      const orgNotif: CampusNotification = {
+        _id: `notif-mod-${Date.now()}-${existing.organizerId}`,
+        userId: existing.organizerId,
+        eventId: existing._id,
+        type: 'ANNOUNCEMENT',
+        title: newStatus === 'PUBLISHED'
+          ? `Event Approved & Published: ${existing.title}`
+          : `Event Proposal Returned: ${existing.title}`,
+        message: newStatus === 'PUBLISHED'
+          ? `Your event "${existing.title}" at ${existing.venue} has been approved by DSW Administration and is now open for student registration.`
+          : `Your event proposal "${existing.title}" was not approved. Reason: ${updated.rejectionReason}`,
+        read: false,
+        createdAt: nowIso,
+      };
+      setNotifications(prev => [orgNotif, ...prev]);
+    }
+
     return { success: true, data: updated };
+  };
+
+  const sendUniversityAnnouncement = (
+    title: string,
+    message: string,
+    targetAudience: 'ALL' | 'STUDENTS' | 'ORGANIZERS' = 'ALL'
+  ): ApiResponse<number> => {
+    if (!title.trim() || !message.trim()) {
+      return { success: false, error: { code: 'VALIDATION_ERROR', message: 'Announcement title and message are required.' } };
+    }
+
+    const recipients = allUsers.filter(u => {
+      if (targetAudience === 'STUDENTS') return u.role === 'student';
+      if (targetAudience === 'ORGANIZERS') return u.role === 'organizer';
+      return true;
+    });
+
+    const nowIso = new Date().toISOString();
+    const broadcastNotifs: CampusNotification[] = recipients.map(u => ({
+      _id: `notif-univ-${Date.now()}-${u._id}`,
+      userId: u._id,
+      type: 'ANNOUNCEMENT',
+      title: `[DHSGSU Official Circular] ${title.trim()}`,
+      message: message.trim(),
+      read: false,
+      createdAt: nowIso,
+    }));
+
+    setNotifications(prev => [...broadcastNotifs, ...prev]);
+    return { success: true, data: recipients.length };
   };
 
   const adminUpdateUserRole = (userId: string, newRole: User['role']): ApiResponse<User> => {
@@ -1228,12 +1753,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentUser,
         isAuthenticated,
         authToken,
+        currentDeviceId,
+        currentPlatform,
         setCurrentUserId,
         loginWithCredentials,
         registerStudentAccount,
         registerOrganizerAccount,
         resubmitOrganizerVerification,
         updateUserProfile,
+        verifyOrReplaceDevice,
+        revokeDevice,
         logout,
         allUsers,
         events,
@@ -1247,6 +1776,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminReviewOrganizerRequest,
         registerForEvent,
         cancelRegistration,
+        joinOrValidateOnlineAttendance,
         submitFeedback,
         updateUserInterests,
         markNotificationAsRead,
@@ -1256,10 +1786,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createEvent,
         updateEvent,
         verifyAndCheckIn,
+        startAttendanceSession,
+        closeAttendanceSession,
+        updateParticipantParticipation,
         sendAnnouncement,
         issueCertificatesForEvent,
+        getEventConflicts,
         adminModerateEvent,
         adminUpdateUserRole,
+        sendUniversityAnnouncement,
         resetPrototypeData,
         isLoaded,
       }}

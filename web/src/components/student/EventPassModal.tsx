@@ -176,6 +176,11 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
           </div>
         </div>
 
+        {/* Pass Policy Notice: Registration Pass != Attendance Proof */}
+        <div className="mt-3 p-2.5 bg-[#FDF7EC] border border-[#B26B16]/40 rounded-[2px] text-[10px] text-[#7D4A0D] leading-relaxed">
+          <strong>Important Academic Policy:</strong> This digital pass is an <em>Entrance &amp; Registration Credential</em> only. Holding this pass does not automatically mark attendance or grant a certificate. Attendance must be verified at the event session ({event.minParticipationPercent ?? 80}% minimum participation required for certificate eligibility).
+        </div>
+
         {/* Bottom Institutional Seal Line */}
         <div className="mt-3 pt-2 border-t border-[#B9B4AA] flex items-center justify-between text-[10px] font-mono text-[#62605B]">
           <span>Issued: {new Date(registration.registeredAt).toLocaleDateString()}</span>

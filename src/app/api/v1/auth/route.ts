@@ -121,6 +121,50 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Enforce 1 Web + 1 Mobile Device Verification Rule if deviceId & platform provided
+      const deviceId = body.deviceId ? String(body.deviceId) : undefined;
+      const platform: 'web' | 'mobile' = body.platform === 'mobile' ? 'mobile' : 'web';
+      const deviceName = body.deviceName
+        ? String(body.deviceName)
+        : platform === 'mobile'
+        ? 'PARISAR Android Client'
+        : 'PARISAR Web Browser';
+      const replaceExistingDevice = Boolean(body.replaceExistingDevice);
+      const nowIso = new Date().toISOString();
+
+      if (deviceId) {
+        const currentDevices = Array.isArray(found.registeredDevices)
+          ? [...found.registeredDevices]
+          : [];
+        const existingPlatformDevice = currentDevices.find(d => d.platform === platform);
+
+        if (existingPlatformDevice && existingPlatformDevice.deviceId !== deviceId && !replaceExistingDevice) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: {
+                code: 'DEVICE_LIMIT_REACHED',
+                message: `Another ${platform.toUpperCase()} device (${existingPlatformDevice.deviceName}) is already verified for this account. Confirm device replacement to bind this device.`,
+              },
+            },
+            { status: 409, headers: CORS_HEADERS }
+          );
+        }
+
+        const filteredDevices = currentDevices.filter(d => d.platform !== platform);
+        filteredDevices.push({
+          deviceId,
+          platform,
+          deviceName,
+          verifiedAt: existingPlatformDevice?.deviceId === deviceId ? existingPlatformDevice.verifiedAt : nowIso,
+          lastActiveAt: nowIso,
+        });
+
+        found.registeredDevices = filteredDevices;
+        found.updatedAt = nowIso;
+        db.updatedAt = nowIso;
+      }
+
       const token = createAuthToken(found);
       return NextResponse.json(
         {
@@ -130,6 +174,11 @@ export async function POST(req: NextRequest) {
             user: found,
             users: db.users,
             organizerRequests: db.organizerRequests,
+            events: db.events,
+            registrations: db.registrations,
+            attendance: db.attendance,
+            certificates: db.certificates,
+            notifications: db.notifications,
           },
         },
         { status: 200, headers: CORS_HEADERS }
@@ -339,12 +388,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 4. SYNC ACCOUNTS / STATE FROM CLIENT TO SHARED SERVER DATABASE
+    // 4. SYNC ACCOUNTS & DOMAIN STATE FROM CLIENT TO SHARED SERVER DATABASE
     if (action === 'sync-state') {
       const incomingUsers: User[] = Array.isArray(body.users) ? body.users : [];
       const incomingReqs: OrganizerVerificationRequest[] = Array.isArray(body.organizerRequests)
         ? body.organizerRequests
         : [];
+      const incomingEvents = Array.isArray(body.events) ? body.events : null;
+      const incomingRegistrations = Array.isArray(body.registrations) ? body.registrations : null;
+      const incomingAttendance = Array.isArray(body.attendance) ? body.attendance : null;
+      const incomingCertificates = Array.isArray(body.certificates) ? body.certificates : null;
+      const incomingNotifications = Array.isArray(body.notifications) ? body.notifications : null;
 
       const nowIso = new Date().toISOString();
 
@@ -365,6 +419,7 @@ export async function POST(req: NextRequest) {
             ...db.users[idx],
             ...u,
             passwordHash: u.passwordHash || db.users[idx].passwordHash,
+            registeredDevices: u.registeredDevices || db.users[idx].registeredDevices,
           };
         }
       }
@@ -379,6 +434,66 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      if (incomingEvents) {
+        for (const ev of incomingEvents) {
+          if (!ev || !ev._id) continue;
+          const eIdx = db.events.findIndex(existing => existing._id === ev._id);
+          if (eIdx === -1) {
+            db.events.unshift(ev);
+          } else {
+            db.events[eIdx] = { ...db.events[eIdx], ...ev };
+          }
+        }
+      }
+
+      if (incomingRegistrations) {
+        for (const reg of incomingRegistrations) {
+          if (!reg || !reg._id) continue;
+          const regIdx = db.registrations.findIndex(existing => existing._id === reg._id);
+          if (regIdx === -1) {
+            db.registrations.unshift(reg);
+          } else {
+            db.registrations[regIdx] = { ...db.registrations[regIdx], ...reg };
+          }
+        }
+      }
+
+      if (incomingAttendance) {
+        for (const att of incomingAttendance) {
+          if (!att || !att._id) continue;
+          const attIdx = db.attendance.findIndex(existing => existing._id === att._id);
+          if (attIdx === -1) {
+            db.attendance.unshift(att);
+          } else {
+            db.attendance[attIdx] = { ...db.attendance[attIdx], ...att };
+          }
+        }
+      }
+
+      if (incomingCertificates) {
+        for (const cert of incomingCertificates) {
+          if (!cert || !cert._id) continue;
+          const cIdx = db.certificates.findIndex(existing => existing._id === cert._id);
+          if (cIdx === -1) {
+            db.certificates.unshift(cert);
+          } else {
+            db.certificates[cIdx] = { ...db.certificates[cIdx], ...cert };
+          }
+        }
+      }
+
+      if (incomingNotifications) {
+        for (const notif of incomingNotifications) {
+          if (!notif || !notif._id) continue;
+          const nIdx = db.notifications.findIndex(existing => existing._id === notif._id);
+          if (nIdx === -1) {
+            db.notifications.unshift(notif);
+          } else {
+            db.notifications[nIdx] = { ...db.notifications[nIdx], ...notif };
+          }
+        }
+      }
+
       db.updatedAt = nowIso;
 
       return NextResponse.json(
@@ -387,6 +502,11 @@ export async function POST(req: NextRequest) {
           data: {
             users: db.users,
             organizerRequests: db.organizerRequests,
+            events: db.events,
+            registrations: db.registrations,
+            attendance: db.attendance,
+            certificates: db.certificates,
+            notifications: db.notifications,
             updatedAt: db.updatedAt,
           },
         },
