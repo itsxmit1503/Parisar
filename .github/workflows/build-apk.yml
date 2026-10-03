@@ -74,6 +74,6 @@ jobs:
 
           echo "Publishing fresh v2.0.0 release..."
           gh release create v2.0.0 parisar-v2.0.0-release.apk parisar-release.apk \
-            --title "PARISAR Android App v2.0.0 (Official Release — DHSGSU)" \
-            --notes "Official compiled and signed Android release (v2.0.0 — 4.6 MB) for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.). Includes Role-Based Authentication (Student, Verified Organizer, University Administrator), Mandatory Organizer Verification Workflow, Event Moderation, Digital Event Passes, and QR Turnstile Attendance." \
+            --title "PARISAR Android App v2.2.0 (Official Release — DHSGSU)" \
+            --notes "Official compiled and signed Android release for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.). Includes Real Google Maps DHSGSU Campus Map with verified Patharia Hills GIS coordinates & native Google Maps directions, unified cross-platform Web + Android authentication (/api/v1/auth), Student / Verified Organizer / University Administrator panels, Digital QR Event Passes, and Attendance Scanner." \
             --latest
