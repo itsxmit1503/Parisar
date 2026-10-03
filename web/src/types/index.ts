@@ -63,16 +63,41 @@ export type EventCategory =
 
 export type EventStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'PUBLISHED' | 'REJECTED' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
 
+export type CampusLocationCategory =
+  | 'Academic'
+  | 'Event Venue'
+  | 'Library'
+  | 'Sports'
+  | 'Hostel'
+  | 'Administration'
+  | 'Food'
+  | 'Medical'
+  | 'Other';
+
+export type VerificationStatus = 'verified' | 'partially_verified' | 'unverified';
+
 export interface CampusVenue {
   id: string;
   name: string;
-  building: string;
-  floor: string;
-  capacity: number;
-  coordinates: { x: number; y: number }; // Percentage for campus map coordinates
-  features: string[];
-  directions: string;
+  category: CampusLocationCategory;
+  latitude: number | null;
+  longitude: number | null;
+  description: string;
+  address: string;
+  verified: VerificationStatus;
+  source: string;
+  navigationQuery: string;
+  isEventVenue?: boolean;
+  // Optional legacy fields retained only for TypeScript compatibility
+  building?: string;
+  floor?: string;
+  capacity?: number;
+  coordinates?: { x: number; y: number };
+  features?: string[];
+  directions?: string;
 }
+
+export type CampusLocation = CampusVenue;
 
 export interface CampusEvent {
   _id: string;

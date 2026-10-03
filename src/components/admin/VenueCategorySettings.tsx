@@ -28,13 +28,13 @@ export const VenueCategorySettings: React.FC = () => {
       {/* Title */}
       <div>
         <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#B6533C] mb-1">
-          Infrastructure Configuration
+          Infrastructure & GIS Configuration
         </div>
         <h1 className="text-2xl font-bold text-[#18212B] tracking-tight">
-          Campus Venues & Categories
+          DHSGSU Campus Locations & Categories
         </h1>
         <p className="text-xs text-[#62605B] mt-0.5">
-          Manage physical campus facilities, room allocations, and standardized university event classifications.
+          Verified geographic campus facilities, academic departments, and standardized university event classifications for Dr. Harisingh Gour Vishwavidyalaya, Sagar.
         </p>
       </div>
 
@@ -42,43 +42,65 @@ export const VenueCategorySettings: React.FC = () => {
       <section className="space-y-4">
         <h2 className="text-xs font-mono font-bold uppercase tracking-widest text-[#18212B] flex items-center gap-2">
           <Building2 className="w-4 h-4 text-[#B6533C]" />
-          <span>Configured Campus Facilities ({venues.length})</span>
+          <span>Configured DHSGSU Campus Locations ({venues.length})</span>
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {venues.map(venue => (
-            <div
-              key={venue.id}
-              className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] space-y-3"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h3 className="text-base font-bold text-[#18212B]">{venue.name}</h3>
-                  <div className="text-xs text-[#62605B] mt-0.5">{venue.building} • {venue.floor}</div>
+          {venues.map(venue => {
+            const hasCoordinates = venue.latitude !== null && venue.longitude !== null;
+            const mapsUrl = hasCoordinates
+              ? `https://www.google.com/maps/search/?api=1&query=${venue.latitude},${venue.longitude}`
+              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue.navigationQuery)}`;
+
+            return (
+              <div
+                key={venue.id}
+                className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-base font-bold text-[#18212B]">{venue.name}</h3>
+                    <div className="text-xs text-[#62605B] mt-0.5">{venue.address}</div>
+                  </div>
+                  <Badge variant="default">{venue.category}</Badge>
                 </div>
-                <Badge variant="default">Capacity: {venue.capacity}</Badge>
-              </div>
 
-              <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs space-y-1.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.03)]">
-                <div className="font-bold text-[#18212B]">Wayfinding Directions:</div>
-                <p className="text-[#62605B] leading-relaxed">{venue.directions}</p>
-              </div>
+                <p className="text-xs text-[#33312E] leading-relaxed">{venue.description}</p>
 
-              <div>
-                <div className="text-xs font-bold text-[#18212B] mb-1.5">Amenities:</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {venue.features.map(f => (
-                    <span
-                      key={f}
-                      className="text-[11px] px-2 py-0.5 rounded-[2px] bg-[#EAE5DB] text-[#18212B] border border-[#B9B4AA] font-mono"
-                    >
-                      {f}
+                <div className="p-3 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-[#18212B]">Verification Status:</span>
+                    <span className="font-mono text-[11px] uppercase font-bold text-[#B6533C]">
+                      {venue.verified}
                     </span>
-                  ))}
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-bold text-[#18212B]">WGS84 Coordinates:</span>
+                    <span className="font-mono text-[11px] text-[#62605B]">
+                      {hasCoordinates
+                        ? `${venue.latitude!.toFixed(6)}° N, ${venue.longitude!.toFixed(6)}° E`
+                        : 'Unverified Pin (Directory Search)'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-[#62605B] pt-1 border-t border-[#D5D0C5]">
+                    <span className="font-bold text-[#18212B]">Source: </span>
+                    {venue.source}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end">
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-bold text-[#213B5C] hover:underline"
+                  >
+                    Open in Google Maps ↗
+                  </a>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
 

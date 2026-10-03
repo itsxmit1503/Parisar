@@ -35,11 +35,18 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   onViewPass,
   onViewOnMap,
 }) => {
-  const { currentUser, registrations, registerForEvent } = useApp();
+  const { currentUser, registrations, venues, registerForEvent } = useApp();
   const { showToast } = useToast();
   const [isRegistering, setIsRegistering] = useState(false);
 
   if (!event) return null;
+
+  const matchedVenue = venues.find(v => v.id === event.venueId);
+  const directionsDestination =
+    matchedVenue && matchedVenue.latitude !== null && matchedVenue.longitude !== null
+      ? `${matchedVenue.latitude},${matchedVenue.longitude}`
+      : matchedVenue?.navigationQuery || `${event.venue} Dr Harisingh Gour Vishwavidyalaya Sagar`;
+  const googleDirectionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(directionsDestination)}&travelmode=walking`;
 
   const userRegistration = registrations.find(
     r => r.eventId === event._id && r.userId === currentUser._id && r.status === 'CONFIRMED'
@@ -131,7 +138,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 className="min-h-[40px] px-3 py-1.5 rounded-[3px] bg-[#EAE5DB] hover:bg-[#EAE5DB]/80 border border-[#B9B4AA] text-xs font-bold text-[#18212B] flex items-center gap-1.5 cursor-pointer touch-manipulation"
               >
                 <Compass className="w-3.5 h-3.5 text-[#B6533C]" />
-                <span>Map</span>
+                <span>View on Campus Map →</span>
               </button>
             )}
             <button
@@ -218,7 +225,7 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           {event.title}
         </h2>
 
-        {/* 3. Date, Time, Venue */}
+        {/* 3. Date, Time, Venue + Campus Map Connection */}
         <div className="p-4 bg-[#EAE5DB]/70 border border-[#B9B4AA] rounded-[4px] space-y-2.5 text-xs sm:text-sm">
           <div className="flex items-center gap-2.5 font-semibold text-[#18212B]">
             <Calendar className="w-4 h-4 text-[#B6533C] shrink-0" />
@@ -228,9 +235,38 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             <Clock className="w-4 h-4 text-[#64788A] shrink-0" />
             <span>{eventTime}</span>
           </div>
-          <div className="flex items-center gap-2.5 font-semibold text-[#18212B]">
-            <MapPin className="w-4 h-4 text-[#B6533C] shrink-0" />
-            <span>{event.venue}</span>
+          <div className="pt-1 border-t border-[#D5D0C5] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-start gap-2.5">
+              <MapPin className="w-4 h-4 text-[#B6533C] shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-[#18212B]">{matchedVenue?.name || event.venue}</div>
+                {matchedVenue?.address && (
+                  <div className="text-[11px] text-[#62605B]">{matchedVenue.address}</div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pl-6 sm:pl-0">
+              {onViewOnMap && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onViewOnMap(event.venueId);
+                  }}
+                  className="px-2.5 py-1.5 rounded-[3px] bg-[#18212B] text-[#FCFAF5] hover:bg-[#2A3747] text-xs font-bold transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  View on Campus Map →
+                </button>
+              )}
+              <a
+                href={googleDirectionsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2.5 py-1.5 rounded-[3px] bg-[#FCFAF5] text-[#B6533C] border border-[#B9B4AA] hover:border-[#B6533C] text-xs font-bold transition-colors whitespace-nowrap"
+              >
+                Directions ↗
+              </a>
+            </div>
           </div>
         </div>
 

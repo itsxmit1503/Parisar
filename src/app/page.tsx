@@ -57,6 +57,7 @@ const PATH_TO_TAB_MAP: Record<string, ActiveTab> = {
   '/admin/login': 'auth-admin',
   '/student': 'student-home',
   '/student/events': 'student-events',
+  '/student/map': 'student-map',
   '/student/my-events': 'student-my-events',
   '/student/my-pass': 'student-passes',
   '/student/profile': 'student-profile',

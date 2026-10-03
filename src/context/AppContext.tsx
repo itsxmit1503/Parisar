@@ -130,6 +130,29 @@ function mergeUsersList(serverUsers: User[], clientUsers: User[]): User[] {
   return merged;
 }
 
+const LEGACY_VENUE_ID_MAP: Record<string, string> = {
+  'venue-tagore-mandapam': 'venue-abhimanch',
+  'venue-iic': 'venue-central-library',
+  'venue-cv-raman': 'venue-geography-dept',
+  'venue-sports-complex': 'venue-stadium',
+  'venue-law-moot': 'venue-law-hall',
+};
+
+function normalizeEventVenues(eventsList: CampusEvent[]): CampusEvent[] {
+  return eventsList.map(evt => {
+    const mappedId = LEGACY_VENUE_ID_MAP[evt.venueId] || evt.venueId;
+    const matchedVenue = CAMPUS_VENUES.find(v => v.id === mappedId);
+    if (matchedVenue) {
+      return {
+        ...evt,
+        venueId: matchedVenue.id,
+        venue: matchedVenue.name,
+      };
+    }
+    return evt;
+  });
+}
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoaded, setIsLoaded] = useState(false);
   
@@ -159,7 +182,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const storedEvents = localStorage.getItem(`${STORAGE_PREFIX}events`);
-      if (storedEvents) setEvents(JSON.parse(storedEvents));
+      if (storedEvents) setEvents(normalizeEventVenues(JSON.parse(storedEvents)));
 
       const storedRegs = localStorage.getItem(`${STORAGE_PREFIX}registrations`);
       if (storedRegs) setRegistrations(JSON.parse(storedRegs));

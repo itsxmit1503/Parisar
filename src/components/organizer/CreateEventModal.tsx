@@ -37,10 +37,12 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
   const { venues, createEvent } = useApp();
   const { showToast } = useToast();
 
+  const eventVenues = venues.filter(v => v.isEventVenue !== false);
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<EventCategory>('Workshop');
-  const [venueId, setVenueId] = useState(venues[0]?.id || '');
+  const [venueId, setVenueId] = useState('venue-swarna-jayanti');
   const [date, setDate] = useState('2026-10-15');
   const [startTime, setStartTime] = useState('10:00');
   const [endTime, setEndTime] = useState('13:00');
@@ -69,7 +71,7 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
       return;
     }
 
-    const selectedVenue = venues.find(v => v.id === venueId) || venues[0];
+    const selectedVenue = venues.find(v => v.id === venueId) || eventVenues[0] || venues[0];
     const startIso = `${date}T${startTime}:00Z`;
     const endIso = `${date}T${endTime}:00Z`;
     const deadlineIso = `${deadlineDate}T23:59:00Z`;
@@ -205,9 +207,9 @@ export const CreateEventModal: React.FC<CreateEventModalProps> = ({
               onChange={e => setVenueId(e.target.value)}
               className="w-full min-h-[46px] px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-sm font-semibold text-[#18212B] focus:outline-none focus:border-[#18212B]"
             >
-              {venues.map(v => (
+              {eventVenues.map(v => (
                 <option key={v.id} value={v.id}>
-                  {v.name}
+                  {v.name} ({v.category})
                 </option>
               ))}
             </select>

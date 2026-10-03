@@ -1,0 +1,1475 @@
+====================================================================================================
+              PARISAR — COMPLETE TECHNICAL AUDIT, ARCHITECTURE & JUDGE DEFENSE REPORT               
+          Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar, Madhya Pradesh (Central Univ.)        
+====================================================================================================
+
+
+> [!IMPORTANT]
+> **Audit Scope & Methodology**: This document is a 100% fact-based technical, product, and architectural audit derived directly from inspecting the source code of **PARISAR** (`d:/Worksss/Campus Event Management`). Zero files in the project workspace were modified. Every feature, endpoint, data model, and architectural layer is classified using strict ground-truth statuses: `IMPLEMENTED`, `PARTIALLY IMPLEMENTED`, `MOCK / PROTOTYPE`, `PLANNED / NOT IMPLEMENTED`, or `NOT VERIFIED`.
+
+
+
+====================================================================================================
+  1. EXECUTIVE PRODUCT SUMMARY
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  What PARISAR Is
+----------------------------------------------------------------------------------------------------
+**PARISAR** (Hindi: **परिसर** — meaning *campus, premises, or surrounding university environment*) is a role-based university event-management platform custom-engineered for **Dr. Harisingh Gour Vishwavidyalaya (DHSGSU)**, A Central University (established 1946, formerly University of Saugor), located on Patharia Hills, Sagar, Madhya Pradesh (`470003`).
+
+
+----------------------------------------------------------------------------------------------------
+  What Real Problem It Solves at DHSGSU
+----------------------------------------------------------------------------------------------------
+Across large multi-department university campuses like DHSGSU (spanning DCSA, Pharmaceutical Sciences, Forensic Science, Law, Commerce, Fine Arts, Physics, and Biotechnology across Patharia Hills), event management traditionally suffers from:
+1. **Fragmented Discovery**: Announcements scattered across physical notice boards and unofficial WhatsApp groups.
+2. **Unverified Registrations & Seat Hoarding**: Google Forms with no duplicate protection, no real-time seat limits, and no university roll-number binding.
+3. **Paper Attendance Bottlenecks**: Paper sign-in sheets at auditorium entrances (like Swarna Jayanti Auditorium or Abhimanch) that enable proxy signatures and delay entry.
+4. **Unregulated Event Creation**: Lack of formal administrative oversight from the Office of the Dean of Students' Welfare (DSW) over who can convene official events and book university venues.
+5. **Fake Participation Certificates**: Manually distributed PDFs without attendance verification or tamper-evident credential codes.
+
+
+----------------------------------------------------------------------------------------------------
+  Core Users (Strict 3-Role Architecture)
+----------------------------------------------------------------------------------------------------
+Implemented in `src/types/index.ts`:
+1. **Student (`student`)**: Discovers published campus events, registers with one click, receives a single-use QR Digital Event Pass (`PARISAR-PASS-*`), tracks participation in the Event Passport, and views/prints verified certificates.
+2. **Organizer (`organizer`)**: Faculty conveners, department coordinators, or student society leads. Must pass mandatory DSW verification (`organizerStatus: 'NONE' | 'PENDING' | 'VERIFIED' | 'REJECTED'`) before accessing the Organizer Console to create events, manage rosters, export CSVs, broadcast announcements, scan QR passes, and batch-issue certificates.
+3. **University Administrator (`admin`)**: Proctorial/DSW authority who reviews and approves/rejects Organizer Verification Requests, moderates event proposals (`PENDING_REVIEW` -> `PUBLISHED` / `REJECTED`), manages user roles, oversees university-wide attendance ledgers, configures campus venues/categories, and inspects the system audit log.
+
+
+----------------------------------------------------------------------------------------------------
+  End-to-End Product Lifecycle
+----------------------------------------------------------------------------------------------------
+  [EMBEDDED VISUAL DIAGRAM IN PDF: PARISAR End-to-End Governance & Event Workflow]
+  (Image File: C:/Users/amits/.gemini/antigravity/brain/a6421c87-230f-4010-97ac-a3b864b50c5e/parisar_event_lifecycle_diagram_1791020891477.jpg)
+
+```mermaid
+flowchart LR
+    A["1. Organizer Signup / Request"] --> B["2. Admin Approves Organizer (DSW)"]
+    B --> C["3. Organizer Creates Event (Draft / Pending Review)"]
+    C --> D["4. Admin Publishes Event"]
+    D --> E["5. Student Discovers & Registers"]
+    E --> F["6. QR Pass Generated (PARISAR-PASS-*)"]
+    F --> G["7. Organizer Scans QR / Manual Check-In"]
+    G --> H["8. Attendance Logged & Verified"]
+    H --> I["9. Organizer Issues Cryptographic Certificates"]
+```
+
+
+----------------------------------------------------------------------------------------------------
+  Why It Is More Than a Static Event Listing Website
+----------------------------------------------------------------------------------------------------
+Unlike a static bulletin board, PARISAR implements **institutional governance** (two-tier approval: organizer identity verification + event proposal moderation), **stateful capacity enforcement** (`registrationCount` vs `capacity`), **cryptographic QR pass generation** (`qrcode` canvas/data-URL rendering), **5-state turnstile verification** (`SUCCESS`, `DUPLICATE`, `WRONG_EVENT`, `NOT_FOUND`, `INVALID`), and **attendance-gated certificate issuance** (`DHSGSU-2026-*` verification hashes).
+
+
+
+====================================================================================================
+  2. COMPLETE FEATURE INVENTORY
+====================================================================================================
+
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| #  | Feature Name             | Purpose                  | Role(s)                  | Where It Exists    | Status                | Source File(s)           | Backend / DB / API       | Notes / Limitations      |
+|    |                          |                          |                          |                    |                       |                          | Dependency               |                          |
++====+==========================+==========================+==========================+====================+=======================+==========================+==========================+==========================+
+| 1  | Institutional Landing    | Public showcase of       | Public                   | Web + Android      | IMPLEMENTED           | LandingPage.tsx          | Reads events from        | Displays top 4 published |
+|    | Page                     | DHSGSU events, workflow, |                          |                    |                       |                          | AppContext.tsx           | events and APK download  |
+|    |                          | metrics, and role entry  |                          |                    |                       |                          |                          | trigger                  |
+|    |                          | points                   |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 2  | Student Account Signup   | Create student account   | Public -> Student        | Web + Android      | IMPLEMENTED           | AuthView.tsx, route.ts   | POST /api/v1/auth        | Syncs to serverStore.ts  |
+|    |                          | with Name, Roll No,      |                          |                    |                       |                          | (action:                 | in-memory singleton      |
+|    |                          | Dept, Year/Sem, Email,   |                          |                    |                       |                          | 'register-student') +    |                          |
+|    |                          | Phone, Password          |                          |                    |                       |                          | localStorage             |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 3  | Organizer Account Signup | Create organizer account | Public -> Organizer      | Web + Android      | IMPLEMENTED           | AuthView.tsx, route.ts   | POST /api/v1/auth        | Immediately routes user  |
+|    | & Verification           | + submit justification   | (PENDING)                |                    |                       |                          | (action:                 | to organizer-pending     |
+|    | Application              | dossier to DSW           |                          |                    |                       |                          | 'register-organizer')    | screen                   |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 4  | Multi-Identifier Login   | Authenticate via Email,  | All Roles                | Web + Android      | IMPLEMENTED           | AuthView.tsx,            | POST /api/v1/auth        | Auto-pushes local        |
+|    |                          | Roll Number (Y23141042), |                          |                    |                       | AppContext.tsx           | (action: 'login') +      | accounts to /api/v1/auth |
+|    |                          | Employee ID              |                          |                    |                       |                          | local fallback           | if missing on server     |
+|    |                          | (EMP-DCSA-104), or Admin |                          |                    |                       |                          |                          |                          |
+|    |                          | ID                       |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 5  | Quick Demo Account       | 1-click credential       | Public                   | Web + Android      | IMPLEMENTED           | AuthView.tsx             | Uses seeded users in     | Intended for             |
+|    | Triggers                 | autofill for judges      |                          |                    |                       |                          | mockData.ts              | hackathon/viva           |
+|    |                          | (Student, Verified Org,  |                          |                    |                       |                          |                          | demonstration            |
+|    |                          | Pending Org, Rejected    |                          |                    |                       |                          |                          |                          |
+|    |                          | Org, Admin)              |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 6  | Developer Testing        | Hidden persona switcher  | Developer                | Web + Android      | IMPLEMENTED           | DevToolbar.tsx           | Mutates currentUserId &  | Hidden from normal UI    |
+|    | Toolbar                  | & seed reset (?dev=true  |                          |                    |                       |                          | clears                   | unless triggered         |
+|    |                          | or Ctrl+Shift+D)         |                          |                    |                       |                          | parisar_dhsgsu_v2_* keys |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 7  | Student Home Dashboard   | Personalized greeting,   | Student                  | Web + Android      | IMPLEMENTED           | StudentHome.tsx          | events, registrations in | Clean, low-density       |
+|    |                          | search bar, category     |                          |                    |                       |                          | AppContext.tsx           | discovery layout         |
+|    |                          | pills, My Passes strip,  |                          |                    |                       |                          |                          |                          |
+|    |                          | and 6 featured events    |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 8  | Event Discovery &        | Full catalog search by   | Student                  | Web + Android      | IMPLEMENTED           | EventDiscovery.tsx       | Client-side filter over  | Filters out DRAFT,       |
+|    | Filtering                | title/venue/tags,        |                          |                    |                       |                          | events in AppContext     | PENDING_REVIEW, and      |
+|    |                          | category filter, and     |                          |                    |                       |                          |                          | REJECTED events          |
+|    |                          | sort (Upcoming /         |                          |                    |                       |                          |                          |                          |
+|    |                          | Popular)                 |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 9  | Event Details & 1-Click  | View full event          | Student                  | Web + Android      | IMPLEMENTED           | EventDetailModal.tsx     | registerForEvent() in    | Checks duplicate         |
+|    | Registration Modal       | schedule, speakers,      |                          |                    |                       |                          | AppContext               | registration, capacity,  |
+|    |                          | eligibility, rules,      |                          |                    |                       |                          | (localStorage)           | deadline, and role       |
+|    |                          | feedback, and register   |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 10 | Post-Event Student       | Attended students can    | Student                  | Web + Android      | IMPLEMENTED           | EventDetailModal.tsx,    | submitFeedback() in      | Requires verified        |
+|    | Feedback & Star Rating   | submit 1–5 star rating   |                          |                    |                       | AppContext.tsx           | AppContext               | attendance record        |
+|    |                          | and comment on completed |                          |                    |                       |                          | (localStorage)           |                          |
+|    |                          | events                   |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 11 | Digital Event Pass & QR  | Generates high-contrast  | Student                  | Web + Android      | IMPLEMENTED           | EventPassModal.tsx,      | Uses qrcode npm library  | Supports Active,         |
+|    | Generator                | QR code pass             |                          |                    |                       | MyPassesView.tsx         | (QRCode.toDataURL)       | Attended, and Cancelled  |
+|    |                          | (PARISAR-PASS-*) with    |                          |                    |                       |                          |                          | pass tabs + Pass         |
+|    |                          | print support            |                          |                    |                       |                          |                          | cancellation             |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 12 | Interactive Campus Venue | Architectural schematic  | Student                  | Web + Android      | IMPLEMENTED           | CampusMap.tsx            | venues (CAMPUS_VENUES) & | Custom CSS/SVG schematic |
+|    | Map                      | of Patharia Hills venues |                          |                    |                       |                          | events in AppContext     | map (not Google          |
+|    |                          | with zoom, pins, specs,  |                          |                    |                       |                          |                          | Maps/Mapbox API)         |
+|    |                          | and wayfinding           |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 13 | Student Event Passport & | Tracks total attended,   | Student                  | Web + Android      | IMPLEMENTED           | EventPassport.tsx        | getStudentPassportStats( | Dynamically computes     |
+|    | Milestones               | workshops, competitions, |                          |                    |                       |                          | in AppContext            | hours from event         |
+|    |                          | hours, and 4 academic    |                          |                    |                       |                          |                          | start/end timestamps     |
+|    |                          | badges                   |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 14 | Verified University      | Displays earned          | Student                  | Web + Android      | IMPLEMENTED           | CertificatesView.tsx     | certificates state in    | Uses window.print() for  |
+|    | Certificates Viewer      | certificates with        |                          |                    |                       |                          | AppContext               | PDF/paper printing       |
+|    |                          | cryptographic code &     |                          |                    |                       |                          |                          |                          |
+|    |                          | printable formal DHSGSU  |                          |                    |                       |                          |                          |                          |
+|    |                          | seal modal               |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 15 | In-App Campus            | Alerts for registration  | Student                  | Web + Android      | IMPLEMENTED           | NotificationsView.tsx    | notifications state in   | In-app only; email/SMS   |
+|    | Notifications            | confirmation, venue      |                          |                    |                       |                          | AppContext               | toggles in profile are   |
+|    |                          | change, announcements,   |                          |                    |                       |                          |                          | UI simulation            |
+|    |                          | and certificates         |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 16 | Student Profile &        | View/edit student name,  | Student                  | Web + Android      | PARTIALLY IMPLEMENTED | ProfileView.tsx          | updateUserProfile() in   | Profile edits persist to |
+|    | Preferences              | department, semester,    |                          |                    |                       |                          | AppContext               | localStorage; Email/SMS  |
+|    |                          | phone, and notification  |                          |                    |                       |                          |                          | toggles do not trigger   |
+|    |                          | checkboxes               |                          |                    |                       |                          |                          | external gateways        |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 17 | Organizer Verification   | Blocks unverified        | Organizer                | Web + Android      | IMPLEMENTED           | OrganizerPendingView.tsx | resubmitOrganizerVerific | Enforced by              |
+|    | Pending / Rejected Gate  | organizers from          | (PENDING/REJECTED)       |                    |                       |                          | in AppContext            | getEffectiveTab() in     |
+|    |                          | Organizer Panel; allows  |                          |                    |                       |                          |                          | page.tsx                 |
+|    |                          | rejected organizers to   |                          |                    |                       |                          |                          |                          |
+|    |                          | re-apply                 |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 18 | Organizer Operations     | Overview of managed      | Organizer (VERIFIED)     | Web + Android      | IMPLEMENTED           | OrganizerDashboard.tsx   | events, registrations,   | Displays recent 5        |
+|    | Dashboard                | events, total            |                          |                    |                       |                          | attendance in AppContext | managed events + quick   |
+|    |                          | registrations,           |                          |                    |                       |                          |                          | modal triggers           |
+|    |                          | checked-in turnout %,    |                          |                    |                       |                          |                          |                          |
+|    |                          | and quick actions        |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 19 | Create Event Modal (with | Create event as Draft or | Organizer (VERIFIED),    | Web + Android      | IMPLEMENTED           | CreateEventModal.tsx     | createEvent() &          | Organizers submit to     |
+|    | Conflict Detection)      | Submit for Review;       | Admin                    |                    |                       |                          | checkVenueConflict() in  | PENDING_REVIEW; Admins   |
+|    |                          | detects venue time-slot  |                          |                    |                       |                          | AppContext               | can publish directly     |
+|    |                          | overlaps                 |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 20 | Organizer Event          | Filter managed events,   | Organizer (VERIFIED)     | Web + Android      | IMPLEMENTED           | ManageEventsList.tsx     | updateEvent() in         | Cancelling an event      |
+|    | Lifecycle Management     | submit drafts for        |                          |                    |                       |                          | AppContext               | auto-notifies all        |
+|    |                          | review, cancel events,   |                          |                    |                       |                          |                          | confirmed registrants    |
+|    |                          | open scanner/roster      |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 21 | Participant Roster & CSV | Search attendees by      | Organizer (VERIFIED),    | Web + Android      | IMPLEMENTED           | ParticipantsView.tsx     | verifyAndCheckIn() +     | Real CSV file generation |
+|    | Export                   | name/roll/dept/token,    | Admin                    |                    |                       |                          | browser data:text/csv    | & download               |
+|    |                          | manual check-in          |                          |                    |                       |                          | download                 |                          |
+|    |                          | override, and CSV        |                          |                    |                       |                          |                          |                          |
+|    |                          | download                 |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 22 | QR Turnstile Attendance  | Verify pass tokens       | Organizer (VERIFIED)     | Web + Android      | PARTIALLY IMPLEMENTED | QRScannerView.tsx        | verifyAndCheckIn() in    | Token verification logic |
+|    | Scanner                  | (SUCCESS, DUPLICATE,     |                          |                    |                       |                          | AppContext               | is IMPLEMENTED; optical  |
+|    |                          | WRONG_EVENT, NOT_FOUND,  |                          |                    |                       |                          |                          | camera viewfinder is a   |
+|    |                          | INVALID)                 |                          |                    |                       |                          |                          | MOCK / PROTOTYPE UI      |
+|    |                          |                          |                          |                    |                       |                          |                          | bezel with manual token  |
+|    |                          |                          |                          |                    |                       |                          |                          | input & 4 test triggers  |
+|    |                          |                          |                          |                    |                       |                          |                          | (no getUserMedia video   |
+|    |                          |                          |                          |                    |                       |                          |                          | stream)                  |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 23 | Broadcast Announcements  | Dispatch urgent notices  | Organizer (VERIFIED),    | Web + Android      | IMPLEMENTED           | AnnouncementsModal.tsx   | sendAnnouncement() in    | Pushes ANNOUNCEMENT      |
+|    | Modal                    | (with 3 DHSGSU presets)  | Admin                    |                    |                       |                          | AppContext               | notifications to         |
+|    |                          | to all confirmed         |                          |                    |                       |                          |                          | registered students'     |
+|    |                          | attendees of an event    |                          |                    |                       |                          |                          | in-app inbox             |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 24 | Batch Certificate        | Issue tamper-evident     | Organizer (VERIFIED),    | Web + Android      | IMPLEMENTED           | CertificatesManager.tsx  | issueCertificatesForEven | Strictly gated by        |
+|    | Issuance Console         | certificates             | Admin                    |                    |                       |                          | in AppContext            | verified attendance      |
+|    |                          | (DHSGSU-2026-*) to all   |                          |                    |                       |                          |                          | (attendance ledger)      |
+|    |                          | verified attendees of an |                          |                    |                       |                          |                          |                          |
+|    |                          | event                    |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 25 | Admin Executive          | University-wide metrics, | Admin                    | Web + Android      | IMPLEMENTED           | AdminDashboard.tsx       | adminReviewOrganizerRequ | Provides 1-click         |
+|    | Dashboard                | pending organizer        |                          |                    |                       |                          | adminModerateEvent()     | Approve/Reject for both  |
+|    |                          | requests queue, and      |                          |                    |                       |                          |                          | organizers and events    |
+|    |                          | event moderation queue   |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 26 | Admin Organizer          | Filter                   | Admin                    | Web + Android      | IMPLEMENTED           | OrganizerRequestsView.ts | POST /api/v1/auth        | Syncs organizer approval |
+|    | Verification Console     | (PENDING/APPROVED/ALL),  |                          |                    |                       |                          | (action:                 | to backend /api/v1/auth  |
+|    |                          | search, and              |                          |                    |                       |                          | 'review-organizer') +    |                          |
+|    |                          | approve/reject organizer |                          |                    |                       |                          | AppContext               |                          |
+|    |                          | dossiers                 |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 27 | Admin Event Moderation   | Approve (PUBLISHED),     | Admin                    | Web + Android      | IMPLEMENTED           | EventModeration.tsx      | adminModerateEvent() in  | Full status lifecycle    |
+|    | Console                  | Reject (REJECTED),       |                          |                    |                       |                          | AppContext               | control                  |
+|    |                          | Complete (COMPLETED), or |                          |                    |                       |                          |                          |                          |
+|    |                          | Cancel any event         |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 28 | Admin University         | Cross-campus attendance  | Admin                    | Web + Android      | IMPLEMENTED           | AdminAttendanceView.tsx  | Reads attendance,        | Exports                  |
+|    | Attendance Overview      | ledger, turnout %        |                          |                    |                       |                          | registrations, events in | PARISAR_DHSGSU_Attendanc |
+|    |                          | calculation, event       |                          |                    |                       |                          | AppContext               |                          |
+|    |                          | filter, and CSV export   |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 29 | Admin User Directory &   | Search all users and     | Admin                    | Web + Android      | IMPLEMENTED           | UserManagement.tsx       | adminUpdateUserRole() in | Prevents self-demotion   |
+|    | Role Assignment          | dynamically reassign     |                          |                    |                       |                          | AppContext               | of currently logged-in   |
+|    |                          | roles (student,          |                          |                    |                       |                          |                          | admin                    |
+|    |                          | organizer, admin)        |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 30 | Admin Venues &           | Inspect configured       | Admin                    | Web + Android      | PARTIALLY IMPLEMENTED | VenueCategorySettings.ts | Reads venues from        | Read-only configuration  |
+|    | Categories View          | DHSGSU venues,           |                          |                    |                       |                          | AppContext               | display (no Add/Edit     |
+|    |                          | capacities, amenities,   |                          |                    |                       |                          |                          | venue form in UI)        |
+|    |                          | and 12 standardized      |                          |                    |                       |                          |                          |                          |
+|    |                          | categories               |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 31 | Admin System Audit Log   | Chronological            | Admin                    | Web + Android      | IMPLEMENTED           | AuditLogView.tsx         | Derived dynamically from | Displays latest 25       |
+|    |                          | tamper-evident feed of   |                          |                    |                       |                          | attendance,              | operational events       |
+|    |                          | check-ins, pass          |                          |                    |                       |                          | registrations,           |                          |
+|    |                          | issuances, and           |                          |                    |                       |                          | certificates             |                          |
+|    |                          | certificate seals        |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 32 | Android APK Distribution | Download APK             | All Roles                | Web + Android      | IMPLEMENTED           | ApkDownloadModal.tsx     | Static file              | Generates scannable QR   |
+|    | Modal                    | (parisar-v2.0.0-release. |                          |                    |                       |                          | /downloads/parisar-v2.0. | pointing to GitHub       |
+|    |                          | directly or via QR code  |                          |                    |                       |                          | + GitHub Release         | release asset            |
+|    |                          | / GitHub Releases        |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 33 | Native Android WebView   | Native Android APK       | All Roles                | Android (android/) | IMPLEMENTED           | MainActivity.java        | Connects to live Vercel  | Disables pull-to-refresh |
+|    | Wrapper App              | wrapping                 |                          |                    |                       |                          | deployment               | (OVER_SCROLL_NEVER) &    |
+|    |                          | https://parisar-eight.ve |                          |                    |                       |                          |                          | caches DOM storage       |
+|    |                          | with offline screen &    |                          |                    |                       |                          |                          |                          |
+|    |                          | back handling            |                          |                    |                       |                          |                          |                          |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+| 34 | Standalone Express REST  | Node.js/Express REST API | Backend                  | server/index.js    | PARTIALLY IMPLEMENTED | server/index.js          | Express 4.19.2, Mongoose | Code exists in           |
+|    | API Server               | with optional Mongoose   |                          |                    |                       |                          | 8.3.2, JWT 9.0.2         | server/index.js, but     |
+|    |                          | connection & in-memory   |                          |                    |                       |                          |                          | Next.js frontend uses    |
+|    |                          | fallback                 |                          |                    |                       |                          |                          | /api/v1/auth Next.js     |
+|    |                          |                          |                          |                    |                       |                          |                          | route instead            |
++----+--------------------------+--------------------------+--------------------------+--------------------+-----------------------+--------------------------+--------------------------+--------------------------+
+
+
+
+
+====================================================================================================
+  3. ACTUAL TECH STACK (VERIFIED FROM CODEBASE)
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  Frontend (`package.json` & `web/package.json`)
+----------------------------------------------------------------------------------------------------
+Verified from `package.json`:
+- **Framework**: Next.js `16.3.7` (App Router, `'use client'` SPA architecture + Next.js Route Handlers)
+- **UI Library**: React `19.2.8` & React DOM `19.2.8`
+- **Language**: TypeScript `^5` (`strict: true`, target `ES2017`)
+- **Styling**: Tailwind CSS `^4` with `@tailwindcss/postcss` `^4` and custom design tokens in `src/app/globals.css`
+- **Icons**: `lucide-react` `^1.48.0`
+- **QR Code Generation**: `qrcode` `^1.5.4` (`@types/qrcode` `^1.5.6`)
+- **Class Utilities**: `clsx` `^2.1.1`
+- **State Management**: React Context API (`AppContext.tsx`) + Browser `localStorage` (`parisar_dhsgsu_v2_*`) + Next.js API sync (`/api/v1/auth`)
+
+
+----------------------------------------------------------------------------------------------------
+  Active Backend Layer (Next.js App Router Serverless API)
+----------------------------------------------------------------------------------------------------
+Verified from `src/app/api/v1/auth/route.ts` and `src/lib/serverStore.ts`:
+- **Runtime**: Next.js Serverless Route Handler (`export const dynamic = 'force-dynamic'`)
+- **Storage**: `globalThis.__PARISAR_SHARED_DB__` in-memory singleton initialized from `src/lib/mockData.ts`
+- **Token Format**: Base64URL-encoded JSON payload (`parisar.<base64url>.dhsgsu`)
+
+
+----------------------------------------------------------------------------------------------------
+  Secondary / Standalone Backend (`server/`)
+----------------------------------------------------------------------------------------------------
+Verified from `server/package.json` and `server/index.js`:
+- **Runtime**: Node.js (`>=18.0.0`)
+- **Framework**: Express `^4.19.2`
+- **Database ODM**: Mongoose `^8.3.2` (Optional connection via `process.env.MONGODB_URI`; falls back to in-memory JS arrays seeded from `server/data/dhsgsuData.js`)
+- **Authentication**: `jsonwebtoken` `^9.0.2` (HS256 JWT with 24h expiry)
+- **Middleware**: `cors` `^2.8.5`, `dotenv` `^16.4.5`, `express.json()`
+
+
+----------------------------------------------------------------------------------------------------
+  Mobile Application (`android/`)
+----------------------------------------------------------------------------------------------------
+Verified from `android/app/build.gradle` and `MainActivity.java`:
+- **Platform**: Native Android SDK (Java 17) — **NOT React Native, NOT Expo, NOT Flutter, NOT Capacitor**
+- **Build System**: Gradle `8.5`, Android Gradle Plugin `8.3.0`
+- **SDK Levels**: `compileSdk 34`, `minSdk 26` (Android 8.0 Oreo), `targetSdk 34` (Android 14)
+- **Application ID**: `in.edu.dhsgsu.parisar` (`versionCode 3`, `versionName "2.1.0"`)
+- **AndroidX Dependencies**:
+  - `androidx.appcompat:appcompat:1.6.1`
+  - `com.google.android.material:material:1.11.0`
+  - `androidx.constraintlayout:constraintlayout:2.1.4`
+  - `androidx.webkit:webkit:1.10.0`
+
+
+----------------------------------------------------------------------------------------------------
+  Deployment & CI/CD
+----------------------------------------------------------------------------------------------------
+- **Web & Serverless API Hosting**: Vercel (`https://parisar-eight.vercel.app`)
+- **Standalone Express IaC Blueprint**: Render (`render.yaml`) — Blueprint configured (`parisar-dhsgsu-api`), though frontend currently defaults to internal `/api/v1/auth`.
+- **Android APK CI/CD**: GitHub Actions (`.github/workflows/build-apk.yml`) — Compiles signed release APK on `ubuntu-latest` with JDK 17 + Gradle 8.5 and publishes to GitHub Releases (`v2.0.0`).
+
+
+
+====================================================================================================
+  4. DEPENDENCY AUDIT
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  Root & Web (`package.json`)
+----------------------------------------------------------------------------------------------------
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| Package              | Version | Purpose                              | Where Used                           | Necessary / Optional / Unused        |
++======================+=========+======================================+======================================+======================================+
+| next                 | 16.3.7  | React framework, App Router,         | Entire src/app/                      | Necessary                            |
+|                      |         | /api/v1/auth serverless route        |                                      |                                      |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| react                | 19.2.8  | Core component model, hooks, context | All .tsx files                       | Necessary                            |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| react-dom            | 19.2.8  | DOM rendering for React 19           | Next.js runtime                      | Necessary                            |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| lucide-react         | ^1.48.0 | Tactile geometric iconography        | All UI components (Navbar,           | Necessary                            |
+|                      |         |                                      | StudentHome, etc.)                   |                                      |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| qrcode               | ^1.5.4  | Generates data-URL QR codes for      | EventPassModal.tsx,                  | Necessary                            |
+|                      |         | passes & APK download                | ApkDownloadModal.tsx                 |                                      |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| clsx                 | ^2.1.1  | Conditional CSS class joining        | Installed in package.json            | Unused (Components use template      |
+|                      |         |                                      |                                      | literals instead of importing clsx)  |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| tailwindcss          | ^4      | Utility-first CSS styling            | src/app/globals.css                  | Necessary                            |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| @tailwindcss/postcss | ^4      | PostCSS integration for Tailwind v4  | postcss.config.mjs                   | Necessary                            |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+| typescript           | ^5      | Static type checking                 | src/types/index.ts & all .ts/.tsx    | Necessary                            |
++----------------------+---------+--------------------------------------+--------------------------------------+--------------------------------------+
+
+
+
+----------------------------------------------------------------------------------------------------
+  Standalone Server (`server/package.json`)
+----------------------------------------------------------------------------------------------------
++--------------+---------+--------------------------------------+-----------------+--------------------------------------+
+| Package      | Version | Purpose                              | Where Used      | Necessary / Optional / Unused        |
++==============+=========+======================================+=================+======================================+
+| express      | ^4.19.2 | HTTP REST server & routing           | server/index.js | Optional (Used only if running       |
+|              |         |                                      |                 | standalone Express server)           |
++--------------+---------+--------------------------------------+-----------------+--------------------------------------+
+| cors         | ^2.8.5  | Cross-Origin Resource Sharing        | server/index.js | Optional (Standalone server only)    |
+|              |         | middleware                           |                 |                                      |
++--------------+---------+--------------------------------------+-----------------+--------------------------------------+
+| dotenv       | ^16.4.5 | Loads .env variables                 | server/index.js | Optional (Standalone server only)    |
++--------------+---------+--------------------------------------+-----------------+--------------------------------------+
+| jsonwebtoken | ^9.0.2  | Signs and verifies JWT tokens        | server/index.js | Optional (Standalone server only)    |
+|              |         | (HS256)                              |                 |                                      |
++--------------+---------+--------------------------------------+-----------------+--------------------------------------+
+| mongoose     | ^8.3.2  | MongoDB connection driver            | server/index.js | Partially Used (mongoose.connect()   |
+|              |         |                                      |                 | is called if MONGODB_URI is set, but |
+|              |         |                                      |                 | no Mongoose schemas/models are       |
+|              |         |                                      |                 | defined; queries still read/write    |
+|              |         |                                      |                 | in-memory arrays)                    |
++--------------+---------+--------------------------------------+-----------------+--------------------------------------+
+
+
+
+
+====================================================================================================
+  5. WEB VS ANDROID ARCHITECTURE
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  Architectural Truth
+----------------------------------------------------------------------------------------------------
+PARISAR follows a **Web-Core + Native Android WebView Shell** architecture:
+1. **Web Application (`src/` & `web/src/`)**: Built with Next.js `16.3.7` and deployed on Vercel (`https://parisar-eight.vercel.app`). Note that the repository contains a mirrored copy of `src/` inside `web/src/`.
+2. **Android Application (`android/`)**: A native Java Android app (`in.edu.dhsgsu.parisar.MainActivity`) that hosts a full-screen `android.webkit.WebView` pointing to `https://parisar-eight.vercel.app`.
+3. **Shared Authentication API (`/api/v1/auth`)**: Both the desktop/mobile browser and the Android WebView communicate with the same Next.js API route (`src/app/api/v1/auth/route.ts`) hosted on Vercel, backed by `src/lib/serverStore.ts`.
+
+  [EMBEDDED VISUAL DIAGRAM IN PDF: PARISAR System Architecture Diagram]
+  (Image File: C:/Users/amits/.gemini/antigravity/brain/a6421c87-230f-4010-97ac-a3b864b50c5e/parisar_system_architecture_diagram_1791020786258.jpg)
+
+```mermaid
+flowchart TB
+    subgraph Clients["Client Layer (Two Clients, One UI Codebase)"]
+        WebClient["Web Browser (Desktop / Mobile)\nhttps://parisar-eight.vercel.app"]
+        AndroidApp["Native Android App (Java SDK 34)\nin.edu.dhsgsu.parisar.MainActivity\nandroid.webkit.WebView"]
+    end
+
+    subgraph NextJS["Vercel Deployment (Next.js 16.3.7 App Router)"]
+        UI["React 19 Client UI\nsrc/app/page.tsx + AppContext.tsx"]
+        LocalStore[("Browser / WebView localStorage\nparisar_dhsgsu_v2_*")]
+        AuthAPI["Next.js Route Handler\n/api/v1/auth (src/app/api/v1/auth/route.ts)"]
+        ServerStore[("In-Memory Server Store\nglobalThis.__PARISAR_SHARED_DB__\n(src/lib/serverStore.ts)")]
+    end
+
+    subgraph StandaloneServer["Standalone Express Server (server/index.js) — Decoupled"]
+        ExpressAPI["Express 4.19.2 REST API\n/api/v1/* (Port 5000)"]
+        InMemSeed[("server/data/dhsgsuData.js\nIn-Memory Arrays")]
+    end
+
+    WebClient --> UI
+    AndroidApp -->|"Loads URL (LOAD_NO_CACHE)"| UI
+    UI <-->|"Reads / Persists State"| LocalStore
+    UI <-->|"fetch('/api/v1/auth')\nLogin, Signup, Sync, Organizer Review"| AuthAPI
+    AuthAPI <--> ServerStore
+    ExpressAPI -.->|"Not called by AppContext.tsx"| InMemSeed
+```
+
+
+
+====================================================================================================
+  6. AUTHENTICATION AUDIT
+====================================================================================================
+
++--------------------------------------+--------------------------------------+-----------------------+
+| Aspect                               | Audit Finding (Code-Verified)        | Status                |
++======================================+======================================+=======================+
+| Student Signup                       | Collects Full Name, Roll Number      | IMPLEMENTED           |
+|                                      | (universityId), Department,          |                       |
+|                                      | Year/Semester, Email, Phone,         |                       |
+|                                      | Password, Confirm Password in        |                       |
+|                                      | AuthView.tsx. Calls                  |                       |
+|                                      | registerStudentAccount() in          |                       |
+|                                      | AppContext.tsx, which POSTs action:  |                       |
+|                                      | 'register-student' to /api/v1/auth.  |                       |
++--------------------------------------+--------------------------------------+-----------------------+
+| Organizer Signup                     | Collects Full Name,                  | IMPLEMENTED           |
+|                                      | University/Employee ID, Department,  |                       |
+|                                      | Designation, Email, Phone, Reason    |                       |
+|                                      | for Organizing, Password in          |                       |
+|                                      | AuthView.tsx. Calls                  |                       |
+|                                      | registerOrganizerAccount() in        |                       |
+|                                      | AppContext.tsx, setting role:        |                       |
+|                                      | 'organizer' and organizerStatus:     |                       |
+|                                      | 'PENDING', and creates an            |                       |
+|                                      | OrganizerVerificationRequest.        |                       |
++--------------------------------------+--------------------------------------+-----------------------+
+| Admin Login                          | Dedicated /admin/login tab           | IMPLEMENTED           |
+|                                      | (auth-admin mode in AuthView.tsx).   |                       |
+|                                      | No public admin signup exists.       |                       |
+|                                      | Authenticates against seeded admin   |                       |
+|                                      | (admin@dhsgsu.edu.in / ADMIN-DSW-001 |                       |
+|                                      | / Admin@DHSGSU).                     |                       |
++--------------------------------------+--------------------------------------+-----------------------+
+| Identifier Matching                  | route.ts and AppContext.tsx          | IMPLEMENTED           |
+|                                      | normalize identifiers                |                       |
+|                                      | (trim().toLowerCase()) and match     |                       |
+|                                      | against email, rollNumber, or _id.   |                       |
++--------------------------------------+--------------------------------------+-----------------------+
+| Password Handling                    | Passwords are stored and compared in | MOCK / PROTOTYPE      |
+|                                      | plaintext (user.password !==         |                       |
+|                                      | cleanPassword) in mockData.ts,       |                       |
+|                                      | route.ts, and server/index.js. No    |                       |
+|                                      | bcrypt or argon2 hashing is used.    |                       |
++--------------------------------------+--------------------------------------+-----------------------+
+| Session Persistence                  | Stored in localStorage under keys    | IMPLEMENTED           |
+|                                      | parisar_dhsgsu_v2_auth (boolean),    |                       |
+|                                      | parisar_dhsgsu_v2_user_id (string),  |                       |
+|                                      | and parisar_dhsgsu_v2_auth_token     |                       |
+|                                      | (string).                            |                       |
++--------------------------------------+--------------------------------------+-----------------------+
+| Cross-Platform Web <-> Android Sync  | On mount, AppContext.tsx fetches GET | PARTIALLY IMPLEMENTED |
+|                                      | /api/v1/auth and pushes local        |                       |
+|                                      | users/requests via POST /api/v1/auth |                       |
+|                                      | (action: 'sync-state'). However,     |                       |
+|                                      | because serverStore.ts uses          |                       |
+|                                      | globalThis.__PARISAR_SHARED_DB__     |                       |
+|                                      | inside a Vercel serverless function, |                       |
+|                                      | serverless cold starts reset the     |                       |
+|                                      | server memory to INITIAL_USERS. If   |                       |
+|                                      | the web browser hasn't synced to the |                       |
+|                                      | warm lambda instance before the      |                       |
+|                                      | phone logs in, a newly created       |                       |
+|                                      | custom account will only exist in    |                       |
+|                                      | the web browser's localStorage.      |                       |
++--------------------------------------+--------------------------------------+-----------------------+
+| Logout Behavior                      | logout() in AppContext.tsx sets      | IMPLEMENTED           |
+|                                      | isAuthenticated = false, removes     |                       |
+|                                      | parisar_dhsgsu_v2_auth_token, and    |                       |
+|                                      | redirects to landing (/).            |                       |
++--------------------------------------+--------------------------------------+-----------------------+
+
+
+
+
+====================================================================================================
+  7. ROLE & PERMISSION AUDIT
+====================================================================================================
+
+  [EMBEDDED VISUAL DIAGRAM IN PDF: PARISAR Role-Based Panel Separation]
+  (Image File: C:/Users/amits/.gemini/antigravity/brain/a6421c87-230f-4010-97ac-a3b864b50c5e/parisar_role_permission_diagram_1791020920299.jpg)
+
+
+----------------------------------------------------------------------------------------------------
+  Route & Panel Separation (`getEffectiveTab` in [`src/app/page.tsx`](file:///d:/Worksss/Campus%20Event%20Management/src/app/page.tsx#L121-L157))
+----------------------------------------------------------------------------------------------------
+- **Unauthenticated Users**: Restricted to `landing`, `auth-login`, `auth-signup`, `auth-admin`. Accessing `/student/*`, `/organizer/*`, or `/admin/*` redirects to `auth-login`.
+- **Authenticated `student`**: Restricted to `student-*` tabs. Attempting to open `organizer-*` or `admin-*` forces `student-home`.
+- **Authenticated `organizer` (`PENDING` or `REJECTED`)**: Locked to `organizer-pending` (`OrganizerPendingView.tsx`). Cannot access `organizer-dashboard` or create events.
+- **Authenticated `organizer` (`VERIFIED`)**: Restricted to `organizer-*` tabs (`organizer-dashboard`, `organizer-events`, `organizer-scanner`, `organizer-participants`, `organizer-certificates`, `organizer-profile`).
+- **Authenticated `admin`**: Restricted to `admin-*` tabs (`admin-dashboard`, `admin-organizer-requests`, `admin-events`, `admin-attendance`, `admin-users`, `admin-venues`, `admin-audit`, `admin-profile`).
+
+
+----------------------------------------------------------------------------------------------------
+  Complete Role Permission Matrix
+----------------------------------------------------------------------------------------------------
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Action / Capability                  | Student (student) | Unverified Organizer                 | Verified Organizer (VERIFIED)        | University Admin (admin)   |
+|                                      |                   | (PENDING/REJECTED)                   |                                      |                            |
++======================================+===================+======================================+======================================+============================+
+| Browse Published Events              | ✅                 | ❌ (Locked to Pending Screen)         | ❌ (Separate Panel)                   | ✅ (Via Moderation Table)   |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Register for Events & Get QR Pass    | ✅                 | ❌                                    | ❌ (registerForEvent blocks           | ❌                          |
+|                                      |                   |                                      | non-students)                        |                            |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Cancel Own Pass                      | ✅                 | ❌                                    | ❌                                    | ❌                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Submit Post-Event Feedback           | ✅ (If Attended)   | ❌                                    | ❌                                    | ❌                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| View Event Passport & Certificates   | ✅                 | ❌                                    | ❌                                    | ❌                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Submit / Resubmit Organizer Request  | ❌ (During Signup) | ✅ (Resubmit if REJECTED)             | ❌ (Already Verified)                 | ❌                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Create Event Proposal                | ❌                 | ❌                                    | ✅                                    | ✅ (Publishes immediately)  |
+| (PENDING_REVIEW)                     |                   |                                      |                                      |                            |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Scan QR Passes & Mark Attendance     | ❌                 | ❌                                    | ✅                                    | ❌ (Read/Export Ledger)     |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Export Participant / Attendance CSV  | ❌                 | ❌                                    | ✅ (Event Roster)                     | ✅ (University-wide Ledger) |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Broadcast Event Announcements        | ❌                 | ❌                                    | ✅                                    | ✅                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Batch-Issue Event Certificates       | ❌                 | ❌                                    | ✅                                    | ✅                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Approve / Reject Organizer Requests  | ❌                 | ❌                                    | ❌                                    | ✅                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Approve / Reject / Cancel Any Event  | ❌                 | ❌                                    | ❌ (Can cancel own event)             | ✅                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+| Reassign User Roles                  | ❌                 | ❌                                    | ❌                                    | ✅                          |
++--------------------------------------+-------------------+--------------------------------------+--------------------------------------+----------------------------+
+
+
+
+
+====================================================================================================
+  8. ORGANIZER VERIFICATION AUDIT
+====================================================================================================
+
+Verified from `AuthView.tsx`, `OrganizerPendingView.tsx`, `OrganizerRequestsView.tsx`, and `AppContext.tsx`:
+
+1. **Application**: During Organizer Signup, the user submits their Name, Employee/Roll ID, Department, Designation, Email, Phone, and a mandatory **Reason for Organizing**.
+2. **Initial State**: Account is created with `role: 'organizer'` and `organizerStatus: 'PENDING'`. An `OrganizerVerificationRequest` record with `status: 'PENDING'` is appended to `organizerRequests`.
+3. **Access Gate**: When logged in, `page.tsx` checks `currentUser.organizerStatus !== 'VERIFIED'` and forces `activeTab = 'organizer-pending'`. Even if `createEvent()` in `AppContext.tsx` is invoked programmatically, it checks `currentUser.organizerStatus !== 'VERIFIED'` and returns `{ success: false, error: { code: 'ORGANIZER_NOT_VERIFIED' } }`.
+4. **Admin Review**: In the Admin Panel (`OrganizerRequestsView` or `AdminDashboard`), the administrator clicks **Approve Organizer** or **Reject**.
+   - **On Approve**: `adminReviewOrganizerRequest(requestId, true, remarks)` updates the request to `APPROVED`, sets the user's `organizerStatus = 'VERIFIED'`, and sends a `POST /api/v1/auth` (`action: 'review-organizer'`) request.
+   - **On Reject**: Sets request to `REJECTED` and `organizerStatus = 'REJECTED'` with administrative remarks.
+5. **Re-Application Flow**: A rejected organizer sees the red rejection banner in `OrganizerPendingView.tsx` and can click **"Submit New Verification Request"**, updating their designation and justification (`resubmitOrganizerVerification`), which resets their status to `PENDING`.
+
+
+
+====================================================================================================
+  9. EVENT WORKFLOW AUDIT
+====================================================================================================
+
+Verified from `CreateEventModal.tsx`, `ManageEventsList.tsx`, `EventModeration.tsx`, and `AppContext.tsx`:
+
+```mermaid
+stateDiagram-v2
+    [*] --> DRAFT: Organizer clicks "Save as Draft"
+    [*] --> PENDING_REVIEW: Organizer clicks "Submit for Review"
+    DRAFT --> PENDING_REVIEW: Organizer clicks "Submit for Review"
+    PENDING_REVIEW --> PUBLISHED: Admin clicks "Approve"
+    PENDING_REVIEW --> REJECTED: Admin clicks "Reject"
+    REJECTED --> PENDING_REVIEW: Organizer clicks "Submit for Review"
+    PUBLISHED --> COMPLETED: Admin clicks "Complete"
+    PUBLISHED --> CANCELLED: Organizer or Admin clicks "Cancel"
+    COMPLETED --> [*]: Certificates Unlocked
+```
+
+- **Venue Conflict Detection**: `checkVenueConflict(venueId, startTime, endTime)` checks if any non-cancelled, non-rejected event in the same `venueId` has overlapping timestamps (`s1 < e2 && s2 < e1`). `CreateEventModal.tsx` displays a live warning banner if a conflict is detected, and `createEvent()` blocks submission (`VENUE_CONFLICT`) unless saving as `DRAFT`.
+- **Visibility Rules**: Students only see events where `status === 'PUBLISHED' || status === 'APPROVED' || status === 'COMPLETED'`. `DRAFT`, `PENDING_REVIEW`, `REJECTED`, and `CANCELLED` events are hidden from the Student Home and Event Discovery grids.
+- **Seat Capacity Enforcement**: Every confirmed registration increments `event.registrationCount` by `1`; cancelling decrements it by `1`. When `registrationCount >= capacity`, `registerForEvent()` returns `CAPACITY_FULL` (`"Seat capacity reached. No remaining passes available."`).
+
+
+
+====================================================================================================
+  10. DATABASE / DATA MODEL AUDIT
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  Where Data Actually Lives
+----------------------------------------------------------------------------------------------------
+1. **Browser / WebView `localStorage` (`parisar_dhsgsu_v2_*`)**: Primary client-side persistence for `users`, `organizer_requests`, `events`, `registrations`, `attendance`, `certificates`, `notifications`, and `feedback`.
+2. **Next.js In-Memory Singleton (`globalThis.__PARISAR_SHARED_DB__` in `src/lib/serverStore.ts`)**: Stores `users` and `organizerRequests` on the server for `/api/v1/auth`.
+3. **Seed Data (`src/lib/mockData.ts`)**: Pre-populates 5 DHSGSU users, 3 organizer requests, 8 campus venues, 8 campus events, 6 registrations, 3 attendance records, 2 certificates, 4 notifications, and 2 feedback reviews.
+
+
+----------------------------------------------------------------------------------------------------
+  Entity Schemas (Verified from [`src/types/index.ts`](file:///d:/Worksss/Campus%20Event%20Management/src/types/index.ts))
+----------------------------------------------------------------------------------------------------
+
+
+  [ 1. `User` ]
+- **Fields**: `_id`, `name`, `email`, `password?`, `role` (`'student' | 'organizer' | 'admin'`), `organizerStatus?` (`'NONE' | 'PENDING' | 'VERIFIED' | 'REJECTED'`), `rollNumber?`, `department`, `year?`, `semester?`, `designation?`, `organization?`, `reasonForOrganizing?`, `phone?`, `profileImage`, `verified`, `createdAt`
+
+
+  [ 2. `OrganizerVerificationRequest` ]
+- **Fields**: `id`, `userId`, `fullName`, `universityId`, `department`, `designation`, `email`, `phone`, `reason`, `status` (`'PENDING' | 'APPROVED' | 'REJECTED'`), `submittedAt`, `reviewedAt?`, `reviewedBy?`, `reviewRemarks?`
+
+
+  [ 3. `CampusVenue` ]
+- **Fields**: `id`, `name`, `shortName`, `building`, `floor`, `capacity`, `coordinates` (`{ x, y }`), `features` (`string[]`), `directions`, `image`
+
+
+  [ 4. `CampusEvent` ]
+- **Fields**: `_id`, `title`, `description`, `category` (`EventCategory`), `date`, `startTime`, `endTime`, `registrationDeadline`, `venue`, `venueId`, `organizerId`, `organizerName`, `organizerDepartment`, `organizerEmail`, `capacity`, `registrationCount`, `bannerImage`, `status` (`EventStatus`), `tags`, `eligibility`, `rules`, `speakers?`, `schedule?`, `featured?`, `certificateType?`, `createdAt`
+
+
+  [ 5. `Registration` ]
+- **Fields**: `_id`, `eventId`, `userId`, `userName`, `userEmail`, `userRollNumber`, `userDepartment`, `userSemester`, `registeredAt`, `qrToken`, `status` (`'CONFIRMED' | 'CANCELLED' | 'WAITLISTED'`), `checkedInAt?`
+
+
+  [ 6. `AttendanceRecord` ]
+- **Fields**: `_id`, `eventId`, `registrationId`, `userId`, `userName`, `userRollNumber`, `userDepartment`, `checkedInAt`, `checkedInBy`, `method` (`'qr' | 'manual'`)
+
+
+  [ 7. `Certificate` ]
+- **Fields**: `_id`, `eventId`, `eventTitle`, `eventDate`, `userId`, `userName`, `userRollNumber`, `department`, `issuedAt`, `verificationCode`, `certificateType`, `issueAuthorizedBy`
+
+
+  [ 8. `CampusNotification` & `EventFeedback` ]
+- **`CampusNotification`**: `_id`, `userId`, `title`, `message`, `type`, `eventId?`, `read`, `createdAt`
+- **`EventFeedback`**: `_id`, `eventId`, `userId`, `userName`, `rating`, `comment`, `createdAt`
+
+
+
+====================================================================================================
+  11. API AUDIT
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  A. Active Next.js App Router API (`src/app/api/v1/auth/route.ts`)
+----------------------------------------------------------------------------------------------------
+This is the **only** API route actively called by the frontend (`AppContext.tsx`).
+
++--------------+--------+--------------------------+--------------------------+--------------------------+--------------------------+-------------+
+| Endpoint     | Method | Action / Purpose         | Auth Required            | Request Payload          | Response Format          | Status      |
++==============+========+==========================+==========================+==========================+==========================+=============+
+| /api/v1/auth | GET    | Fetch server users       | No                       | None                     | { success: true, data: { | IMPLEMENTED |
+|              |        | (sanitized) &            |                          |                          | users, organizerRequests |             |
+|              |        | organizerRequests        |                          |                          | } }                      |             |
+|              |        | snapshot                 |                          |                          |                          |             |
++--------------+--------+--------------------------+--------------------------+--------------------------+--------------------------+-------------+
+| /api/v1/auth | POST   | action: 'login' —        | No                       | { action: 'login',       | { success: true, data: { | IMPLEMENTED |
+|              |        | Authenticate by          |                          | identifier, password,    | token, user } } or       |             |
+|              |        | email/rollNumber +       |                          | loginPortal }            | 401/403/404              |             |
+|              |        | password                 |                          |                          |                          |             |
++--------------+--------+--------------------------+--------------------------+--------------------------+--------------------------+-------------+
+| /api/v1/auth | POST   | action:                  | No                       | { action:                | { success: true, data: { | IMPLEMENTED |
+|              |        | 'register-student' —     |                          | 'register-student',      | token, user } } (201) or |             |
+|              |        | Create student account   |                          | name, rollNumber,        | 409                      |             |
+|              |        |                          |                          | department, year,        |                          |             |
+|              |        |                          |                          | semester, email, phone,  |                          |             |
+|              |        |                          |                          | password }               |                          |             |
++--------------+--------+--------------------------+--------------------------+--------------------------+--------------------------+-------------+
+| /api/v1/auth | POST   | action:                  | No                       | { action:                | { success: true, data: { | IMPLEMENTED |
+|              |        | 'register-organizer' —   |                          | 'register-organizer',    | token, user, request } } |             |
+|              |        | Create pending organizer |                          | name, universityId,      | (201)                    |             |
+|              |        | & request                |                          | department, designation, |                          |             |
+|              |        |                          |                          | email, phone, reason,    |                          |             |
+|              |        |                          |                          | password }               |                          |             |
++--------------+--------+--------------------------+--------------------------+--------------------------+--------------------------+-------------+
+| /api/v1/auth | POST   | action: 'sync-state' —   | No                       | { action: 'sync-state',  | { success: true, data: { | IMPLEMENTED |
+|              |        | Merge client             |                          | users, organizerRequests | users, organizerRequests |             |
+|              |        | localStorage             |                          | }                        | } }                      |             |
+|              |        | users/requests into      |                          |                          |                          |             |
+|              |        | server store             |                          |                          |                          |             |
++--------------+--------+--------------------------+--------------------------+--------------------------+--------------------------+-------------+
+| /api/v1/auth | POST   | action:                  | No (Unauthenticated      | { action:                | { success: true, data: { | IMPLEMENTED |
+|              |        | 'review-organizer' —     | POST)                    | 'review-organizer',      | request } }              |             |
+|              |        | Approve/reject organizer |                          | requestId, approved,     |                          |             |
+|              |        | request                  |                          | remarks }                |                          |             |
++--------------+--------+--------------------------+--------------------------+--------------------------+--------------------------+-------------+
+
+
+
+----------------------------------------------------------------------------------------------------
+  B. Standalone Express Server API (`server/index.js`)
+----------------------------------------------------------------------------------------------------
+These routes exist in `server/index.js` (lines 107–652) with JWT `authenticate()` and `authorizeRoles()` middleware, **but are NOT wired to the Next.js frontend**:
+- `GET /api/v1/health`
+- `POST /api/v1/auth/login`, `POST /api/v1/auth/register-student`, `POST /api/v1/auth/register-organizer`
+- `GET /api/v1/organizer-requests`, `PATCH /api/v1/organizer-requests/:id/review`
+- `GET /api/v1/venues`
+- `GET /api/v1/events`, `GET /api/v1/events/:id`, `POST /api/v1/events`, `PATCH /api/v1/events/:id/status`
+- `GET /api/v1/registrations`, `POST /api/v1/registrations`, `DELETE /api/v1/registrations/:id`
+- `GET /api/v1/attendance`, `POST /api/v1/attendance/verify`
+- `POST /api/v1/announcements`
+- `GET /api/v1/certificates`, `POST /api/v1/certificates/issue`
+- `GET /api/v1/passport`
+
+
+
+====================================================================================================
+  12. SECURITY AUDIT
+====================================================================================================
+
++----------+--------------------------------------+--------------------------------------+--------------------------------------+
+| Severity | Vulnerability / Finding              | Exact Code Location                  | Technical Impact & Remediation       |
++==========+======================================+======================================+======================================+
+| CRITICAL | Plaintext Password Storage &         | mockData.ts, AppContext.tsx,         | Passwords are stored in plaintext in |
+|          | Transmission in Client Sync          | route.ts                             | INITIAL_USERS and localStorage       |
+|          |                                      |                                      | (parisar_dhsgsu_v2_users), and       |
+|          |                                      |                                      | compared via user.password !==       |
+|          |                                      |                                      | cleanPassword. Fix: Hash passwords   |
+|          |                                      |                                      | server-side with bcrypt/argon2 and   |
+|          |                                      |                                      | never store user password lists in   |
+|          |                                      |                                      | localStorage.                        |
++----------+--------------------------------------+--------------------------------------+--------------------------------------+
+| CRITICAL | Unauthenticated State Sync & Admin   | src/app/api/v1/auth/route.ts         | POST /api/v1/auth with action:       |
+|          | Review Actions on /api/v1/auth       |                                      | 'sync-state' or action:              |
+|          |                                      |                                      | 'review-organizer' does not verify   |
+|          |                                      |                                      | an Admin JWT/session header. Any     |
+|          |                                      |                                      | client can POST an modified user     |
+|          |                                      |                                      | object with role: 'admin' or approve |
+|          |                                      |                                      | their own organizer request. Fix:    |
+|          |                                      |                                      | Require signed Authorization: Bearer |
+|          |                                      |                                      | <JWT> and validate admin role        |
+|          |                                      |                                      | server-side.                         |
++----------+--------------------------------------+--------------------------------------+--------------------------------------+
+| HIGH     | Unsigned Base64 Token in Next.js     | src/lib/serverStore.ts               | createAuthToken() generates          |
+|          | Auth Route                           |                                      | parisar.${Buffer.from(payload).toStr |
+|          |                                      |                                      | without an HMAC cryptographic        |
+|          |                                      |                                      | signature. Fix: Sign tokens using    |
+|          |                                      |                                      | jsonwebtoken (HS256) with a strong   |
+|          |                                      |                                      | JWT_SECRET (as done in               |
+|          |                                      |                                      | server/index.js).                    |
++----------+--------------------------------------+--------------------------------------+--------------------------------------+
+| HIGH     | Hardcoded Android Keystore Password  | build-apk.yml, build.gradle          | Keystore password parisar2026 is     |
+|          | in CI Workflow & Gradle              |                                      | committed in plaintext in            |
+|          |                                      |                                      | build.gradle and                     |
+|          |                                      |                                      | .github/workflows/build-apk.yml, and |
+|          |                                      |                                      | a new keystore is generated on every |
+|          |                                      |                                      | CI run (breaking Android APK upgrade |
+|          |                                      |                                      | signatures). Fix: Store a single     |
+|          |                                      |                                      | persistent keystore in GitHub        |
+|          |                                      |                                      | Actions Secrets.                     |
++----------+--------------------------------------+--------------------------------------+--------------------------------------+
+| MEDIUM   | Client-Side Role Elevation via       | AppContext.tsx                       | Because parisar_dhsgsu_v2_user_id    |
+|          | localStorage Manipulation            |                                      | and parisar_dhsgsu_v2_users live in  |
+|          |                                      |                                      | localStorage (and via DevToolbar     |
+|          |                                      |                                      | ?dev=true), a user with browser      |
+|          |                                      |                                      | DevTools can switch userId to        |
+|          |                                      |                                      | admin-1. Fix: Move authorization     |
+|          |                                      |                                      | checks and data queries to           |
+|          |                                      |                                      | server-authenticated endpoints.      |
++----------+--------------------------------------+--------------------------------------+--------------------------------------+
+| LOW      | android:usesCleartextTraffic="true"  | AndroidManifest.xml                  | Allows HTTP traffic inside the       |
+|          | in AndroidManifest.xml               |                                      | Android WebView. Since the           |
+|          |                                      |                                      | production URL is                    |
+|          |                                      |                                      | https://parisar-eight.vercel.app,    |
+|          |                                      |                                      | cleartext traffic should be disabled |
+|          |                                      |                                      | in release builds.                   |
++----------+--------------------------------------+--------------------------------------+--------------------------------------+
+| INFO     | Predictable QR Pass Token Format     | AppContext.tsx                       | Pass tokens follow                   |
+|          |                                      |                                      | PARISAR-PASS-${prefix}-${rollSuffix} |
+|          |                                      |                                      | (e.g., PARISAR-PASS-DL-CS042), which |
+|          |                                      |                                      | can be guessed if an attacker knows  |
+|          |                                      |                                      | a student's roll number. Fix: Append |
+|          |                                      |                                      | an HMAC or crypto.randomUUID() nonce |
+|          |                                      |                                      | to each pass token.                  |
++----------+--------------------------------------+--------------------------------------+--------------------------------------+
+
+
+
+
+====================================================================================================
+  13. QR / ATTENDANCE AUDIT
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  How QR Pass Generation Works
+----------------------------------------------------------------------------------------------------
+1. **Token Creation**: When a student registers in `AppContext.tsx`, a token is created:
+   ```ts
+   const prefix = event.title.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+   const rollSuffix = (currentUser.rollNumber || '001').slice(-4);
+   const qrToken = `PARISAR-PASS-${prefix}-${rollSuffix}-${Math.floor(100 + Math.random() * 900)}`;
+   ```
+2. **Visual QR Rendering**: `EventPassModal.tsx` passes `registration.qrToken` into `QRCode.toDataURL()` from the `qrcode` library, rendering a 220x220px `#18212B` on `#FCFAF5` QR image inside a perforated ticket card.
+
+
+----------------------------------------------------------------------------------------------------
+  How Turnstile Verification Works (`verifyAndCheckIn` in [`AppContext.tsx`](file:///d:/Worksss/Campus%20Event%20Management/src/context/AppContext.tsx#L1087-L1155))
+----------------------------------------------------------------------------------------------------
+When an organizer scans or enters a token in `QRScannerView.tsx`, `verifyAndCheckIn(eventId, qrToken, method)` executes a 4-stage validation:
+1. **Format Check**: Must start with `'PARISAR-'` and have length >= 10; otherwise returns `status: 'INVALID'`.
+2. **Lookup**: Searches `registrations` for `r.qrToken.toUpperCase() === cleanToken && r.status === 'CONFIRMED'`. If not found, returns `status: 'INVALID'` (displayed as `REGISTRATION NOT FOUND` when triggered via the `NOT_FOUND` test button).
+3. **Cross-Event Check**: If `matchingReg.eventId !== eventId`, returns `status: 'WRONG_EVENT'` along with the actual event title the pass belongs to.
+4. **Duplicate Check-In Guard**: Checks if `matchingReg.checkedInAt` is truthy or if an `AttendanceRecord` already exists for `(eventId, registrationId)`. If so, returns `status: 'DUPLICATE'` with the exact timestamp of first entry.
+5. **Success Commit**: Sets `checkedInAt` on the registration and inserts an `AttendanceRecord` (`method: 'qr' | 'manual'`).
+
+
+----------------------------------------------------------------------------------------------------
+  Honest Hardware Camera Assessment
+----------------------------------------------------------------------------------------------------
+- **Status**: `PARTIALLY IMPLEMENTED` (Verification engine is `IMPLEMENTED`; optical camera feed is `MOCK / PROTOTYPE`).
+- `QRScannerView.tsx` renders a styled viewfinder bezel with a bouncing terracotta laser line, a **Manual Pass Token Entry** input box, and **4 Turnstile Verification Test Pass buttons** (`PARISAR-PASS-DL-CS042`, `PARISAR-PASS-DL-CS088`, `PARISAR-PASS-UT-EC118`, `PARISAR-NOTFOUND-000`). It does **not** invoke `navigator.mediaDevices.getUserMedia` or `html5-qrcode`.
+
+
+
+====================================================================================================
+  14. UI / UX AUDIT
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  Aesthetic Direction: "Tactile Academic Ledger"
+----------------------------------------------------------------------------------------------------
+Verified from `src/app/globals.css`:
+- **Design Paradigm**: P4 Atmospheric Minimalism & High-Craft Light UI (`55%`) blended with P2 Kinetic Typography & Neo-Brutalist Swiss Grids (`30%`).
+- **Surface Palette**: Warm sandstone/parchment canvas (`#F4F0E8`), elevated ivory cards (`#FCFAF5`), recessed stone inputs (`#EAE5DB`), deep ink structural borders (`#18212B`), and hard offset shadows (`shadow-[2px_2px_0_0_#18212B]`).
+- **UX Simplification Compliance**:
+  - **Student Home (`StudentHome.tsx`)**: Focused on a single primary purpose ("Help the student discover and register for campus events"). Features a time-of-day greeting, one search bar, horizontal category pills, and simplified event cards with a single primary action (`View Event →`).
+  - **Information Density**: Secondary metrics and complex tables are kept out of the student discovery flow and organized cleanly inside dedicated tabs (`My Passes`, `Profile`, `Organizer Dashboard`, `Admin Dashboard`).
+
+
+
+====================================================================================================
+  15. PARISAR BRAND IDENTITY AUDIT
+====================================================================================================
+
+- **Name**: **PARISAR** (परिसर) — authentically rooted in Hindi academic vocabulary for "university campus/premises".
+- **Logo Component (`src/components/ui/ParisarLogo.tsx`)**: Custom SVG geometric emblem (`variant: 'full' | 'compact' | 'icon' | 'ticket' | 'seal'`). Depicts a vertical campus avenue spine (`x1="8"`), a central quadrangle loop, an intersecting 45-degree diagonal pathway, and a `#B6533C` Terracotta gathering plaza core dot.
+- **Color Tokens**:
+  - Sandstone Canvas: `#F4F0E8`
+  - Warm Ivory Card: `#FCFAF5`
+  - Deep Academic Ink: `#18212B`
+  - Sagar Sandstone Terracotta (Primary Accent): `#B6533C`
+  - Academic Brass / Ochre (Credentials & Seals): `#B08A4A`
+  - Bundelkhand Slate Blue: `#64788A`
+- **University Specificity**: Every screen, seed record, venue (`Swarna Jayanti Auditorium`, `Gour Memorial Hall`, `Turing Advanced Computing Lab (DCSA)`, `Abhimanch Open-Air Amphitheatre`), roll number (`Y23141042`), and certificate seal is authentically tailored to **Dr. Harisingh Gour Vishwavidyalaya, Sagar (M.P.)**.
+
+
+
+====================================================================================================
+  16. RESPONSIVENESS AUDIT
+====================================================================================================
+
+- **Desktop (`lg` / `xl` — 1280px+):**
+  - Top sticky navigation bar (`Navbar.tsx`) with role badge, horizontal tab buttons, and quick action CTA.
+  - 3-column event discovery grids (`grid-cols-1 md:grid-cols-2 lg:grid-cols-3`) and 12-column split views (`lg:grid-cols-12`) for the QR Scanner and Campus Map.
+- **Mobile & Android Viewport (<768px):**
+  - **Bottom Navigation Bar (`Navbar.tsx`)**: Fixed bottom bar (`md:hidden fixed bottom-0 left-0 right-0 z-40`) with 4–5 role-specific tabs, active top indicator bar, and `.pb-safe` (`env(safe-area-inset-bottom)`).
+  - **Touch Targets (`globals.css`)**: `.tactile-input` enforces `min-height: 46px`, `touch-action: manipulation`, and `-webkit-tap-highlight-color: transparent`.
+  - **Tables**: Moderation, Roster, and Attendance tables wrap in `overflow-x-auto` containers with `min-w-[640px]` / `min-w-[700px]` so columns never crush on narrow screens.
+
+
+
+====================================================================================================
+  17. MOBILE APP AUDIT
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  What the Android App Actually Is
+----------------------------------------------------------------------------------------------------
+Verified from `android/app/src/main/java/in/edu/dhsgsu/parisar/MainActivity.java`:
+- **Implementation**: A **Native Android (Java) WebView Wrapper** (`minSdk 26`, `targetSdk 34`) that loads `https://parisar-eight.vercel.app`.
+- **Pull-to-Refresh Prevention**:
+  - In `MainActivity.java`: `webView.setOverScrollMode(View.OVER_SCROLL_NEVER)` (no `SwipeRefreshLayout` is used).
+  - In `globals.css`: `overscroll-behavior-y: none; overscroll-behavior-x: none;`.
+- **Cache & Storage Configuration**:
+  - `settings.setDomStorageEnabled(true)` and `settings.setDatabaseEnabled(true)` enable `localStorage` persistence inside the Android app.
+  - `settings.setCacheMode(WebSettings.LOAD_NO_CACHE)` ensures the WebView always fetches the latest deployed UI from Vercel when online.
+- **Offline Handling**:
+  - Checks `ConnectivityManager` / `NetworkCapabilities` before loading and intercepts `onReceivedError` for main-frame failures, displaying a native Android `offlineContainer` layout with a `retryButton`.
+- **Back Navigation**:
+  - Overrides `onBackPressed()`: if `webView.canGoBack()`, navigates back within the WebView history; otherwise exits the activity.
+
+
+
+====================================================================================================
+  18. DEPLOYMENT AUDIT
+====================================================================================================
+
++-----------------------------+----------------------------------+---------------------------------+-----------------------+--------------------------------------+
+| Target                      | Platform                         | Configuration File              | Status                | Operational Reality                  |
++=============================+==================================+=================================+=======================+======================================+
+| Web Frontend & /api/v1/auth | Vercel                           | next.config.ts, package.json    | IMPLEMENTED           | Live at                              |
+|                             |                                  |                                 |                       | https://parisar-eight.vercel.app.    |
+|                             |                                  |                                 |                       | Serves both the Next.js UI and the   |
+|                             |                                  |                                 |                       | /api/v1/auth serverless route.       |
++-----------------------------+----------------------------------+---------------------------------+-----------------------+--------------------------------------+
+| Standalone Express API      | Render (Blueprint)               | render.yaml, server/index.js    | PARTIALLY IMPLEMENTED | render.yaml defines web service      |
+|                             |                                  |                                 |                       | parisar-dhsgsu-api (rootDir:         |
+|                             |                                  |                                 |                       | server). However, unless manually    |
+|                             |                                  |                                 |                       | connected in the Render dashboard    |
+|                             |                                  |                                 |                       | and set via NEXT_PUBLIC_API_URL, it  |
+|                             |                                  |                                 |                       | is not used by the Vercel frontend.  |
++-----------------------------+----------------------------------+---------------------------------+-----------------------+--------------------------------------+
+| Android Release APK         | GitHub Actions + GitHub Releases | .github/workflows/build-apk.yml | IMPLEMENTED           | On every push to main, compiles      |
+|                             |                                  |                                 |                       | app-release.apk, deletes old         |
+|                             |                                  |                                 |                       | tags/releases, and publishes a fresh |
+|                             |                                  |                                 |                       | v2.0.0 release with                  |
+|                             |                                  |                                 |                       | parisar-v2.0.0-release.apk. Static   |
+|                             |                                  |                                 |                       | APK is also served from              |
+|                             |                                  |                                 |                       | public/downloads/parisar-v2.0.0-rele |
++-----------------------------+----------------------------------+---------------------------------+-----------------------+--------------------------------------+
+
+
+
+
+====================================================================================================
+  19. PERFORMANCE AUDIT
+====================================================================================================
+
++--------------------------------------+------------+--------------------------------------+
+| Area                                 | Risk Level | Technical Explanation                |
++======================================+============+======================================+
+| Single-Bundle SPA Hydration          | Medium     | All 20 Next.js route files           |
+| (src/app/page.tsx)                   |            | (/student/*, /organizer/*, /admin/*) |
+|                                      |            | import and render <ParisarRouteApp>  |
+|                                      |            | from src/app/page.tsx, which         |
+|                                      |            | statically imports all Student,      |
+|                                      |            | Organizer, and Admin components into |
+|                                      |            | one client bundle. Dynamic           |
+|                                      |            | next/dynamic code-splitting by role  |
+|                                      |            | would reduce initial JS payload.     |
++--------------------------------------+------------+--------------------------------------+
+| Android WebView LOAD_NO_CACHE        | Medium     | MainActivity.java sets               |
+|                                      |            | WebSettings.LOAD_NO_CACHE. While     |
+|                                      |            | this guarantees fresh UI updates     |
+|                                      |            | without reinstalling the APK, it     |
+|                                      |            | re-downloads JS/CSS assets on every  |
+|                                      |            | cold launch over mobile data.        |
++--------------------------------------+------------+--------------------------------------+
+| Unoptimized <img> Elements           | Low        | Components use standard HTML <img    |
+|                                      |            | src={...} /> pointing to external    |
+|                                      |            | Unsplash URLs (images.unsplash.com)  |
+|                                      |            | and DiceBear avatars                 |
+|                                      |            | (api.dicebear.com) rather than       |
+|                                      |            | next/image.                          |
++--------------------------------------+------------+--------------------------------------+
+| localStorage Synchronous             | Low        | AppContext.tsx serializes arrays     |
+| Serialization                        |            | (events, registrations, attendance,  |
+|                                      |            | etc.) to localStorage via useEffect  |
+|                                      |            | hooks on state changes. Fast for     |
+|                                      |            | $<1,000$ records, but would block    |
+|                                      |            | the main thread at $50,000+$         |
+|                                      |            | records.                             |
++--------------------------------------+------------+--------------------------------------+
+
+
+
+
+====================================================================================================
+  20. ERROR / EDGE CASE AUDIT
+====================================================================================================
+
++--------------------------------------+-------------------+--------------------------------------+
+| Scenario / Edge Case                 | Handling Status   | How PARISAR Handles It (Verified in  |
+|                                      |                   | Code)                                |
++======================================+===================+======================================+
+| Invalid Login Credentials            | Handled           | Returns ACCOUNT_NOT_FOUND or         |
+|                                      |                   | INVALID_PASSWORD (401/404) and       |
+|                                      |                   | renders an inline red error alert    |
+|                                      |                   | inside AuthView.tsx.                 |
++--------------------------------------+-------------------+--------------------------------------+
+| Wrong Portal Login (e.g., Student on | Handled           | Returns ROLE_MISMATCH (403) with     |
+| /admin/login)                        |                   | message instructing the user to      |
+|                                      |                   | switch login portals.                |
++--------------------------------------+-------------------+--------------------------------------+
+| Duplicate Account Signup (Same Email | Handled           | Checks existing email and rollNumber |
+| or Roll No)                          |                   | in route.ts, returning 409 Conflict  |
+|                                      |                   | (EMAIL_EXISTS / ROLL_EXISTS).        |
++--------------------------------------+-------------------+--------------------------------------+
+| Unverified Organizer Accessing       | Handled           | getEffectiveTab() in page.tsx        |
+| Dashboard                            |                   | redirects to organizer-pending, and  |
+|                                      |                   | createEvent() blocks execution.      |
++--------------------------------------+-------------------+--------------------------------------+
+| Duplicate Event Registration         | Handled           | registerForEvent() in AppContext.tsx |
+|                                      |                   | checks for an existing CONFIRMED     |
+|                                      |                   | registration and returns             |
+|                                      |                   | DUPLICATE_REGISTRATION.              |
++--------------------------------------+-------------------+--------------------------------------+
+| Full Event Capacity                  | Handled           | registerForEvent() returns           |
+| (registrationCount >= capacity)      |                   | CAPACITY_FULL and disables the       |
+|                                      |                   | Register button (Event Full).        |
++--------------------------------------+-------------------+--------------------------------------+
+| Expired Registration Deadline        | Handled           | registerForEvent() compares new      |
+|                                      |                   | Date() > new                         |
+|                                      |                   | Date(event.registrationDeadline) and |
+|                                      |                   | returns DEADLINE_PASSED.             |
++--------------------------------------+-------------------+--------------------------------------+
+| Duplicate QR Scan at Turnstile       | Handled           | verifyAndCheckIn() returns status:   |
+|                                      |                   | 'DUPLICATE' with the student's       |
+|                                      |                   | original check-in timestamp.         |
++--------------------------------------+-------------------+--------------------------------------+
+| Scanning Pass for Wrong Event        | Handled           | verifyAndCheckIn() detects           |
+|                                      |                   | matchingReg.eventId !== eventId and  |
+|                                      |                   | returns status: 'WRONG_EVENT' with   |
+|                                      |                   | the target event's name.             |
++--------------------------------------+-------------------+--------------------------------------+
+| Venue Double-Booking / Time Overlap  | Handled           | checkVenueConflict() detects         |
+|                                      |                   | overlapping start/end times for the  |
+|                                      |                   | same venueId and blocks non-draft    |
+|                                      |                   | creation.                            |
++--------------------------------------+-------------------+--------------------------------------+
+| Offline Network in Android App       | Handled           | MainActivity.java intercepts network |
+|                                      |                   | errors and shows a native retry      |
+|                                      |                   | screen.                              |
++--------------------------------------+-------------------+--------------------------------------+
+| Serverless Cold Start Wiping         | Partially handled | Web client re-syncs its localStorage |
+| In-Memory Users                      |                   | users to /api/v1/auth via sync-state |
+|                                      |                   | when opened, but if a user signs up  |
+|                                      |                   | on Web and the Vercel lambda         |
+|                                      |                   | cold-starts while the Web tab is     |
+|                                      |                   | closed, Android login won't find the |
+|                                      |                   | custom user until Web reconnects.    |
++--------------------------------------+-------------------+--------------------------------------+
+
+
+
+
+====================================================================================================
+  21. TESTING AUDIT
+====================================================================================================
+
+- **Automated Unit / Integration / E2E Tests**: `PLANNED / NOT IMPLEMENTED`. There are no Jest, Vitest, Playwright, or Cypress test files (`*.test.ts`, `*.spec.ts`) in the repository.
+- **Static Analysis & Type Safety**: `IMPLEMENTED`. TypeScript `5` (`strict: true`) and ESLint `9` (`eslint-config-next`) validate types and syntax during `npm run build`.
+- **Built-In Interactive Verification Harnesses**: `IMPLEMENTED`.
+  1. **Turnstile Verification Test Passes (`QRScannerView.tsx`)**: 4 dedicated test buttons to simulate `SUCCESS`, `DUPLICATE`, `WRONG_EVENT`, and `NOT_FOUND` scans during live demos.
+  2. **Quick Demo Account Triggers (`AuthView.tsx`)**: 1-click login/autofill for all 5 role/verification states.
+  3. **Developer Testing Toolbar (`DevToolbar.tsx`)**: `Ctrl+Shift+D` or `?dev=true` to switch personas or reset `localStorage` seed data.
+
+
+
+====================================================================================================
+  22. PROJECT STRUCTURE
+====================================================================================================
+
+```text
+d:\Worksss\Campus Event Management\
+├── .github/workflows/
+│   └── build-apk.yml                # GitHub Actions CI/CD: compiles signed Android APK & publishes v2.0.0 release
+├── android/                         # Native Android (Java SDK 34) WebView Wrapper Application
+│   ├── app/
+│   │   ├── build.gradle             # Android build config (in.edu.dhsgsu.parisar, minSdk 26, targetSdk 34)
+│   │   └── src/main/
+│   │       ├── AndroidManifest.xml  # Permissions (INTERNET, ACCESS_NETWORK_STATE, CAMERA) & MainActivity
+│   │       ├── java/in/edu/dhsgsu/parisar/MainActivity.java # WebView wrapper loading parisar-eight.vercel.app
+│   │       └── res/                 # Android layouts (activity_main.xml), drawables, values
+│   ├── build.gradle
+│   └── settings.gradle
+├── public/
+│   └── downloads/
+│       └── parisar-v2.0.0-release.apk # Bundled static Android APK for direct browser download
+├── server/                          # Standalone Node.js + Express REST API Server (Secondary/Optional)
+│   ├── data/dhsgsuData.js           # Seed data for standalone Express backend
+│   ├── index.js                     # Express 4.19 server with JWT middleware & /api/v1/* endpoints
+│   └── package.json                 # Server dependencies (express, cors, dotenv, jsonwebtoken, mongoose)
+├── src/                             # Primary Next.js 16.3.7 Application Source
+│   ├── app/
+│   │   ├── api/v1/auth/route.ts     # Active Next.js Serverless Auth & State Sync API
+│   │   ├── admin/...                # 8 Admin route entrypoints (/admin, /admin/login, /admin/events, etc.)
+│   │   ├── login/page.tsx           # /login route entrypoint
+│   │   ├── signup/page.tsx          # /signup route entrypoint
+│   │   ├── organizer/...            # 5 Organizer route entrypoints (/organizer, /organizer/pending, etc.)
+│   │   ├── student/...              # 5 Student route entrypoints (/student, /student/events, etc.)
+│   │   ├── globals.css              # Tailwind v4 theme tokens & Tactile Academic Ledger CSS classes
+│   │   ├── layout.tsx               # Root HTML layout & metadata
+│   │   └── page.tsx                 # Master SPA Router (ParisarRouteApp), role guards, modal controllers
+│   ├── components/
+│   │   ├── admin/                   # AdminDashboard, OrganizerRequestsView, EventModeration, UserManagement, etc.
+│   │   ├── auth/                    # AuthView.tsx (Login, Student Signup, Organizer Signup, Admin Login)
+│   │   ├── landing/                 # LandingPage.tsx
+│   │   ├── layout/                  # Navbar.tsx, Footer.tsx, DevToolbar.tsx
+│   │   ├── mobile-promo/            # ApkDownloadModal.tsx
+│   │   ├── organizer/               # OrganizerDashboard, OrganizerPendingView, CreateEventModal, QRScannerView, etc.
+│   │   ├── profile/                 # RoleProfileView.tsx
+│   │   ├── student/                 # StudentHome, EventDiscovery, EventDetailModal, EventPassModal, CampusMap, etc.
+│   │   └── ui/                      # Button.tsx, Badge.tsx, Modal.tsx, Toast.tsx, EmptyState.tsx, ParisarLogo.tsx
+│   ├── context/
+│   │   └── AppContext.tsx           # Central state store, business logic, localStorage sync, /api/v1/auth client
+│   ├── lib/
+│   │   ├── mockData.ts              # Institutional DHSGSU seed data (users, venues, events, passes, certificates)
+│   │   └── serverStore.ts           # Server-side globalThis.__PARISAR_SHARED_DB__ singleton
+│   └── types/
+│       └── index.ts                 # Complete TypeScript domain interfaces
+├── web/                             # Mirrored copy of the Next.js web application workspace
+├── .env.example                     # Environment variable template (PORT, MONGODB_URI, JWT_SECRET, NEXT_PUBLIC_API_URL)
+├── next.config.ts                   # Next.js configuration
+├── package.json                     # Root dependencies (Next 16.3.7, React 19.2.8, Tailwind v4, Lucide, QRCode)
+└── render.yaml                      # Render.com Blueprint IaC for standalone Express server
+```
+
+
+
+====================================================================================================
+  23. TECHNOLOGY DECISION ANALYSIS
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  1. Next.js 16.3.7 (App Router + Client State Router)
+----------------------------------------------------------------------------------------------------
+`PROBLEM` -> Need a unified codebase that supports clean URLs (`/student/events`, `/organizer/scanner`, `/admin/organizer-requests`), instant tab transitions without page reloads, and built-in serverless API endpoints on Vercel.
+`DECISION` -> Used Next.js `16.3.7` with App Router directories delegating to `<ParisarRouteApp>` (`src/app/page.tsx`) and `/api/v1/auth` (`src/app/api/v1/auth/route.ts`).
+`ALTERNATIVE` -> Separate Vite SPA + external Express hosting.
+`TRADE-OFF` -> Deploying a single Next.js repo on Vercel gives zero-config API + UI hosting and instant client-side state transitions, at the cost of bundling all role views into a single client-side hydration tree.
+
+
+----------------------------------------------------------------------------------------------------
+  2. Hybrid `localStorage` + `/api/v1/auth` In-Memory Store
+----------------------------------------------------------------------------------------------------
+`PROBLEM` -> Judges and users testing the live URL need pre-populated, realistic DHSGSU data that responds instantaneously (<50ms) and works resiliently even if an external database isn't provisioned.
+`DECISION` -> Built `AppContext.tsx` with `localStorage` (`parisar_dhsgsu_v2_*`) hydrated from `mockData.ts` and synchronized with `serverStore.ts` via `/api/v1/auth`.
+`ALTERNATIVE` -> Strict cloud MongoDB Atlas dependency for every read/write.
+`TRADE-OFF` -> Guarantees 100% uptime and zero database latency during hackathon demos, but serverless cold starts on Vercel reset `globalThis.__PARISAR_SHARED_DB__`, meaning newly created accounts are ephemeral across server restarts until a persistent DB (e.g., MongoDB Atlas / Postgres) is attached.
+
+
+----------------------------------------------------------------------------------------------------
+  3. Native Java Android WebView Wrapper (`android/`)
+----------------------------------------------------------------------------------------------------
+`PROBLEM` -> Need a downloadable, installable `.apk` (`4.6 MB`) for Android phones that stays 100% in sync with every UI and authentication update deployed to the web app.
+`DECISION` -> Built a native Java Android app (`MainActivity.java`) using `android.webkit.WebView` (`OVER_SCROLL_NEVER`, custom offline screen, hardware back navigation) compiled via GitHub Actions.
+`ALTERNATIVE` -> Separate React Native or Flutter codebase.
+`TRADE-OFF` -> Eliminates UI drift between Web and Android and produces a tiny ~4.6 MB APK with automated CI/CD releases, at the trade-off that it requires an internet connection to load the web shell and lacks native camera hardware API bridging.
+
+
+----------------------------------------------------------------------------------------------------
+  4. Tailwind CSS v4 + Custom "Tactile Academic Ledger" Tokens
+----------------------------------------------------------------------------------------------------
+`PROBLEM` -> Generic SaaS dark-mode/neon templates look inappropriate for a historic 1946 Central University (`DHSGSU`).
+`DECISION` -> Defined a bespoke warm parchment/sandstone (`#F4F0E8`), terracotta (`#B6533C`), and deep ink (`#18212B`) token system in `globals.css` with hard 2px offset shadows (`shadow-[2px_2px_0_0_#18212B]`).
+`ALTERNATIVE` -> Pre-built component library like Material UI (MUI) or Ant Design.
+`TRADE-OFF` -> Creates an unmistakable, high-contrast, sunlight-readable visual identity tailored to Sagar's sandstone architecture, requiring custom UI primitives (`Button.tsx`, `Modal.tsx`, `Badge.tsx`).
+
+
+
+====================================================================================================
+  24. JUDGE QUESTION BANK & VIVA DEFENSE GUIDE
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  Category 1: Basic Product Questions
+----------------------------------------------------------------------------------------------------
+
+
+  [ Q1: What does PARISAR mean, and why did you build this specifically for DHSGSU? ]
+- **Short Answer (15–20s)**: *Parisar* (परिसर) means "university campus." We built PARISAR for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar, to replace fragmented WhatsApp notices, Google Forms, and paper attendance sheets with a single role-governed platform for students, verified organizers, and the Dean of Students' Welfare.
+- **Detailed Answer (45–60s)**: At a sprawling central university like DHSGSU on Patharia Hills, events across DCSA, Pharmacy, Law, and Swarna Jayanti Auditorium suffer from three disconnected workflows: discovery on notice boards, registration on unverified Google Forms, and attendance on paper sheets. PARISAR unifies this into an institutional ledger with three strict roles: Students discover and get QR passes; Organizers must be verified by the university before creating events or scanning attendance; and Administrators moderate both organizers and event proposals.
+- **Likely Follow-Up**: Why only three roles instead of adding Faculty, Club President, or Volunteer roles?
+- **Strong Technical Point**: Keeping RBAC strictly to `student`, `organizer` (with stateful `organizerStatus`), and `admin` avoids role explosion while modeling faculty vs. student conveners through the `designation` and `organizerStatus` attributes.
+- **Trap to Avoid**: Never claim PARISAR is a generic multi-college SaaS; emphasize its deep institutional binding to DHSGSU venues, roll numbers, and governance.
+
+
+  [ Q2: How does PARISAR fulfill the three core challenge requirements? ]
+- **Short Answer**: (1) It displays categorized seminars, workshops, cultural events, and competitions on the Student Home and Discovery screens; (2) Students register with one click to receive a QR pass; (3) Organizers manage participant rosters, scan QR passes for attendance, export CSVs, and issue certificates.
+- **Detailed Answer**: First, `EventDiscovery.tsx` and `StudentHome.tsx` showcase upcoming events with real-time seat counters, category filters, and an interactive Patharia Hills venue map. Second, `EventDetailModal.tsx` executes atomic seat-capacity, deadline, and duplicate checks via `registerForEvent()` and generates a `PARISAR-PASS-*` QR code using `qrcode`. Third, `OrganizerDashboard.tsx`, `ParticipantsView.tsx`, and `QRScannerView.tsx` allow verified organizers to validate passes across 5 turnstile states, perform manual overrides, export CSV rosters, broadcast announcements, and issue attendance-gated certificates.
+- **Likely Follow-Up**: Can a student get a certificate just by registering?
+- **Strong Technical Point**: No—`issueCertificatesForEvent()` in `AppContext.tsx` queries the `attendance` ledger, not `registrations`, making proxy certificates impossible.
+- **Trap to Avoid**: Do not say certificates are emailed as PDFs; state clearly they are issued in-app with verification hashes and printed via `window.print()`.
+
+
+
+----------------------------------------------------------------------------------------------------
+  Category 2: Tech Stack & Architecture Questions
+----------------------------------------------------------------------------------------------------
+
+
+  [ Q3: Walk us through your actual tech stack and how the Web and Android apps relate. ]
+- **Short Answer**: The web platform is built on Next.js `16.3.7`, React `19.2.8`, TypeScript `5`, and Tailwind CSS `v4`, deployed on Vercel. The Android app is a native Java Android SDK (`compileSdk 34`) WebView wrapper that loads the live Vercel application with native offline handling and disabled overscroll.
+- **Detailed Answer**: We use a "Two Clients, One Platform" architecture. The core application and `/api/v1/auth` serverless route run on Next.js 16.3.7. On Android (`in.edu.dhsgsu.parisar`), `MainActivity.java` configures an `android.webkit.WebView` with DOM storage enabled (`setDomStorageEnabled(true)`), `OVER_SCROLL_NEVER` to eliminate browser-style pull-to-refresh, hardware back-button history traversal, and a `ConnectivityManager` offline fallback view. We also have a standalone Express 4.19 API blueprint in `server/index.js` for dedicated backend scaling.
+- **Likely Follow-Up**: Is the Android app built with React Native or Flutter?
+- **Strong Technical Point**: Be 100% direct: "No, it is a native Java Android WebView wrapper compiled with Gradle 8.5 and Android SDK 34 via GitHub Actions. We chose this so every UI and workflow update deployed to Vercel is immediately live on Android without requiring separate Play Store/APK rebuilds."
+- **Trap to Avoid**: **Never claim the Android app is React Native or Flutter**—a judge inspecting `android/app/src/main/java/in/edu/dhsgsu/parisar/MainActivity.java` will immediately see `android.webkit.WebView`.
+
+
+  [ Q4: Why do you have both `/api/v1/auth/route.ts` in Next.js and `server/index.js` in Express? ]
+- **Short Answer**: `/api/v1/auth/route.ts` is our active Next.js serverless backend deployed on Vercel so the frontend and API run on the same origin without external hosting dependencies. `server/index.js` is our standalone Express + JWT + Mongoose service prepared for dedicated backend deployment.
+- **Detailed Answer**: During deployment on Vercel, hosting the authentication and state-sync API inside Next.js App Router (`/api/v1/auth`) allowed both the web browser and the Android WebView to hit `https://parisar-eight.vercel.app/api/v1/auth` with zero CORS issues or cold-start spin-up delays from free-tier external containers. Meanwhile, `server/index.js` contains the full standalone Express REST architecture with `jsonwebtoken` middleware and optional `mongoose` connection for migrating to a dedicated Node.js server.
+- **Likely Follow-Up**: Which backend does the live app currently call?
+- **Strong Technical Point**: `AppContext.tsx` calls `/api/v1/auth` (the Next.js App Router endpoint) for login, student/organizer signup, organizer review, and state synchronization, while managing event/registration mutations in `AppContext` + `localStorage`.
+- **Trap to Avoid**: Don't claim every button click hits MongoDB on Render right now; explain the hybrid `localStorage` + `/api/v1/auth` serverless store honestly.
+
+
+
+----------------------------------------------------------------------------------------------------
+  Category 3: Authentication, Security & Database Questions
+----------------------------------------------------------------------------------------------------
+
+
+  [ Q5: How does authentication work across Web and Android? What happens when a new user signs up? ]
+- **Short Answer**: When a user signs up on Web or Android, `AuthView.tsx` calls `POST /api/v1/auth`, which validates uniqueness of their Email and Roll Number, appends the account to the shared server store (`serverStore.ts`), and persists the session locally in `localStorage`.
+- **Detailed Answer**: PARISAR supports multi-identifier login—users can sign in with either their university email (`amit.sharma@dhsgsu.edu.in`) or their DHSGSU Roll/Employee ID (`Y23141042` or `EMP-DCSA-104`). On login or signup, the client sends a `POST` request to `/api/v1/auth`. Furthermore, when `AppContext` initializes, it runs `syncWithBackend()`, pulling the latest server snapshot (`GET /api/v1/auth`) and syncing any local accounts (`action: 'sync-state'`).
+- **Likely Follow-Up**: Why did a newly created web account sometimes say "Account not found" on the phone if the server restarted?
+- **Strong Technical Point**: Because `/api/v1/auth` on Vercel currently stores state in `globalThis.__PARISAR_SHARED_DB__` (in-memory serverless singleton) rather than an external cloud database. When a Vercel serverless function cold-starts, its memory resets to `INITIAL_USERS`. If the web browser is open, its `sync-state` call re-hydrates the server memory; for permanent cross-device persistence across cold starts, connecting `/api/v1/auth` to MongoDB Atlas or Vercel KV/Postgres is the exact production upgrade path.
+- **Trap to Avoid**: Never pretend `globalThis` in a serverless function is a permanent disk database—explaining serverless cold-start ephemerality shows strong cloud engineering maturity.
+
+
+  [ Q6: How do you prevent an unverified student from pretending to be an Organizer and creating fake campus events? ]
+- **Short Answer**: Through a mandatory two-stage administrative gate: first, Organizer accounts start with `organizerStatus: 'PENDING'` and are locked to the Verification Pending screen until approved by the Admin; second, even verified organizers' events enter `PENDING_REVIEW` and require Admin approval before becoming visible to students.
+- **Detailed Answer**: In `src/app/page.tsx`, `getEffectiveTab()` inspects `currentUser.role === 'organizer'` and `currentUser.organizerStatus !== 'VERIFIED'`. Any unverified or rejected organizer is strictly routed to `OrganizerPendingView.tsx` and cannot render `OrganizerDashboard` or `CreateEventModal`. At the data layer in `AppContext.tsx`, `createEvent()` also verifies `currentUser.organizerStatus === 'VERIFIED'`. Once verified by the Admin (`OrganizerRequestsView.tsx`), any event they submit defaults to `status: 'PENDING_REVIEW'`, which is filtered out of student views (`EventDiscovery.tsx`) until an Admin approves it to `PUBLISHED` in `EventModeration.tsx`.
+- **Likely Follow-Up**: What if an organizer's verification request is rejected? Are they permanently locked out?
+- **Strong Technical Point**: No—`OrganizerPendingView.tsx` detects `organizerStatus === 'REJECTED'`, displays the Admin's specific `reviewRemarks`, and provides a re-application form (`resubmitOrganizerVerification()`) so they can submit updated faculty/HOD endorsement details.
+- **Trap to Avoid**: Don't say organizers can immediately publish events upon signing up.
+
+
+  [ Q7: What are the current security limitations in your prototype, and how would you harden them for production at DHSGSU? ]
+- **Short Answer**: Currently, passwords in seed/local state are plaintext, Next.js auth tokens are base64url-encoded without HMAC signing, and role state is cached in `localStorage`. For production, we would hash passwords with `bcrypt`, enforce `HS256` JWT cookies (`HttpOnly`), and validate all role mutations server-side against MongoDB/PostgreSQL.
+- **Detailed Answer**: We prioritized zero-latency demonstrability for the prototype, which introduced three deliberate trade-offs we have audited:
+  1. **Password Storage**: Replace plaintext comparisons in `/api/v1/auth` with `bcrypt.hash(password, 12)` and `bcrypt.compare()`.
+  2. **Token Signing & Transport**: Replace `createAuthToken()`'s unsigned base64url string with `jsonwebtoken` (`HS256`, already implemented in `server/index.js`) stored in `HttpOnly; Secure; SameSite=Strict` cookies instead of `localStorage`.
+  3. **Endpoint Authorization**: Protect `review-organizer` and `sync-state` on `/api/v1/auth` with server-side admin middleware so client requests cannot self-approve roles.
+
+
+
+----------------------------------------------------------------------------------------------------
+  Category 4: QR Scanner, Conflict Detection & UX Questions
+----------------------------------------------------------------------------------------------------
+
+
+  [ Q8: How does your QR Attendance Scanner work, and what edge cases does it catch? ]
+- **Short Answer**: Each registration generates a unique `PARISAR-PASS-*` token encoded into a QR image via `qrcode`. In `QRScannerView.tsx`, `verifyAndCheckIn()` validates the token against 5 states: `SUCCESS`, `DUPLICATE` (already scanned), `WRONG_EVENT` (pass belongs to another event), `NOT_FOUND`, and `INVALID`.
+- **Detailed Answer**: When an organizer selects their active session in `QRScannerView.tsx` and scans or inputs a token, `verifyAndCheckIn(selectedEventId, token, method)` runs in `AppContext.tsx`. It first checks the `PARISAR-` prefix, then queries `registrations` for a `CONFIRMED` match. If the pass is for a different event (e.g., scanning an *Abhivyakti Youth Fest* pass at the *Deep Learning Workshop*), it returns `WRONG_EVENT` and names the other event. If `checkedInAt` is already populated, it blocks re-entry with `DUPLICATE` and shows the exact timestamp of the first scan. For the demo, we included 4 one-click test pass triggers and manual token entry alongside the optical reticle UI.
+- **Likely Follow-Up**: Does the scanner use the device camera right now?
+- **Strong Technical Point**: In the current build, the optical viewfinder is a simulated UI bezel paired with manual token entry and 4 live test-case triggers so judges can test all 5 verification outcomes on any desktop or phone without needing a second physical device displaying a QR code. Adding live camera decoding requires wiring `html5-qrcode` or the Web `BarcodeDetector` API into `QRScannerView.tsx`'s `handleVerify` callback.
+- **Trap to Avoid**: Never claim the animated reticle is actively reading from the webcam if a judge holds a phone up to the laptop screen—proactively point out the 4 Turnstile Verification Test buttons!
+
+
+  [ Q9: How do you prevent two organizers from booking Swarna Jayanti Auditorium at the exact same time? ]
+- **Short Answer**: `CreateEventModal.tsx` runs `checkVenueConflict(venueId, startTime, endTime)` in real time, checking if any active event at that venue has overlapping start and end timestamps (`s1 < e2 && s2 < e1`), and blocks submission if a conflict exists.
+- **Detailed Answer**: Every event is bound to a specific `venueId` from `CAMPUS_VENUES` and has ISO `startTime` and `endTime` strings. As the organizer selects a venue, date, and time window in `CreateEventModal.tsx`, `useMemo` invokes `checkVenueConflict()`. If another non-cancelled, non-rejected event occupies that `venueId` during an overlapping interval, a warning banner alerts the organizer with the conflicting event's title, and `createEvent()` refuses to submit the proposal for review.
+
+
+  [ Q10: Why did you disable pull-to-refresh on mobile, and how did you design the UI for first-time students? ]
+- **Short Answer**: Browser-style pull-to-refresh makes a WebView app feel like a fragile website and causes accidental reloads while scrolling lists. We disabled it in both CSS (`overscroll-behavior: none`) and Android (`OVER_SCROLL_NEVER`), and simplified every screen around "One Screen = One Clear Purpose."
+- **Detailed Answer**: On Android (`MainActivity.java`), we set `webView.setOverScrollMode(View.OVER_SCROLL_NEVER)` and in `globals.css` we applied `overscroll-behavior-y: none`, ensuring scrolling feels like a native app. For UX, we eliminated multi-button clutter on event cards—cards on `StudentHome.tsx` and `EventDiscovery.tsx` show only the image, category, title, date/time, venue, status badge, and a single `View Event →` action, moving the registration action cleanly inside `EventDetailModal.tsx`.
+
+
+
+====================================================================================================
+  25. VIVA ANSWER STYLE CHECKLIST
+====================================================================================================
+
+When answering judges during the evaluation:
+1. **Lead with Institutional Context**: Always anchor answers in **Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar** (mentioning DSW, Swarna Jayanti Auditorium, and roll numbers like `Y23141042`).
+2. **State the Architecture Crisp & Clear**: Next.js `16.3.7` + React `19.2.8` + TypeScript `5` + Tailwind `v4` on Web, paired with a Native Java Android (`SDK 34`) WebView client.
+3. **Demonstrate the Governance Flow Live**: Show how an unverified organizer (`Priya Patel`) is blocked on `OrganizerPendingView`, how Admin (`Prof. S.P. Gautam`) approves her, and how QR scanning catches `SUCCESS`, `DUPLICATE`, and `WRONG_EVENT`.
+4. **Own Prototype Trade-offs Confidently**: If asked about camera scanning or serverless persistence, state clearly what is `IMPLEMENTED` vs. `MOCK / PROTOTYPE` and give the exact engineering upgrade path.
+
+
+
+====================================================================================================
+  26. FINAL AUDIT SUMMARY (A–R)
+====================================================================================================
+
+
+----------------------------------------------------------------------------------------------------
+  A. What Is Fully Working (`IMPLEMENTED`)
+----------------------------------------------------------------------------------------------------
+- Complete 3-role separation (`student`, `organizer`, `admin`) with route/tab guards (`getEffectiveTab` in `page.tsx`).
+- Full authentication UI (`Login`, `Student Signup`, `Organizer Signup`, `Admin Login`) with multi-identifier support (Email or Roll/Employee ID).
+- Mandatory Organizer Verification workflow (`PENDING` -> `VERIFIED` / `REJECTED` + Re-application flow).
+- Two-tier Event Lifecycle (`DRAFT` / `PENDING_REVIEW` -> Admin `PUBLISHED` / `REJECTED` -> `COMPLETED` / `CANCELLED`) with real-time venue time-slot conflict detection.
+- Student Event Discovery, 1-click Registration, Seat Capacity & Deadline enforcement, and `qrcode` Digital Event Pass generation + printing.
+- 5-state QR Turnstile Verification logic (`SUCCESS`, `DUPLICATE`, `WRONG_EVENT`, `NOT_FOUND`, `INVALID`), manual roster check-in override, and CSV export for both Organizers and Admins.
+- Attendance-gated batch Certificate Issuance (`DHSGSU-2026-*`), Student Event Passport (badges & hours calculation), Interactive Campus Venue Map, In-App Notifications, and System Audit Log.
+- Native Java Android app (`android/`) with offline fallback, disabled pull-to-refresh, and automated GitHub Actions APK release pipeline.
+
+
+----------------------------------------------------------------------------------------------------
+  B. What Is Partially Working (`PARTIALLY IMPLEMENTED`)
+----------------------------------------------------------------------------------------------------
+- **Cross-Platform Account Persistence (`/api/v1/auth`)**: Works across Web and Android while the Vercel serverless instance is warm, but resets to `INITIAL_USERS` on serverless cold starts unless re-synced by the web client's `localStorage`.
+- **QR Attendance Scanner (`QRScannerView.tsx`)**: Verification engine, manual token input, and 4 test-case buttons are fully functional; the optical camera viewfinder is a visual UI simulation without live `getUserMedia` video decoding.
+- **Standalone Express Server (`server/index.js`)**: Full REST routes and JWT middleware exist in `server/index.js`, but the frontend currently only calls Next.js's internal `/api/v1/auth` route.
+- **Admin Venue & Category Settings (`VenueCategorySettings.tsx`)**: Displays all 8 DHSGSU venues and 12 categories, but does not include an interactive form to add/edit venues.
+
+
+----------------------------------------------------------------------------------------------------
+  C. What Is Mock / Prototype Only (`MOCK / PROTOTYPE`)
+----------------------------------------------------------------------------------------------------
+- **Optical Camera Feed in `QRScannerView.tsx`**: Animated CSS reticle without hardware camera stream binding.
+- **Email & SMS Delivery Checkboxes in `ProfileView.tsx`**: Saves preference toggles in UI state, but does not invoke SMTP/Twilio gateways.
+- **Plaintext Passwords & Unsigned Base64 Tokens in `serverStore.ts`**: Prototype authentication mechanics.
+
+
+----------------------------------------------------------------------------------------------------
+  D. What Is Missing (`PLANNED / NOT IMPLEMENTED`)
+----------------------------------------------------------------------------------------------------
+- Persistent external cloud database connection (e.g., MongoDB Atlas schemas / PostgreSQL) wired to `/api/v1/auth` and all event/registration mutations.
+- Live hardware camera barcode decoding (`html5-qrcode` / `BarcodeDetector`) in `QRScannerView.tsx`.
+- Automated unit/integration test suite (Vitest / Playwright).
+
+
+----------------------------------------------------------------------------------------------------
+  E. Architectural Strengths
+----------------------------------------------------------------------------------------------------
+- Zero-drift "Two Clients, One Platform" design between Web and Android.
+- Strict institutional governance modeling real university rules (DSW Organizer Verification + Event Moderation + Venue Conflict Detection).
+- Tactile, high-contrast "Tactile Academic Ledger" design system custom-built for DHSGSU.
+
+
+----------------------------------------------------------------------------------------------------
+  F. Architectural Weaknesses
+----------------------------------------------------------------------------------------------------
+- Reliance on client-side `localStorage` for event/registration/attendance mutations means data created by an organizer on one device does not automatically propagate to other devices (only `users` and `organizerRequests` sync via `/api/v1/auth`).
+- Ephemeral `globalThis.__PARISAR_SHARED_DB__` in Vercel serverless functions.
+- Duplicate `src/` and `web/src/` directories in the repository root that must be kept in sync manually.
+
+
+----------------------------------------------------------------------------------------------------
+  G. Security Risks
+----------------------------------------------------------------------------------------------------
+- Plaintext passwords in `mockData.ts` and `localStorage`.
+- Unauthenticated `sync-state` and `review-organizer` actions in `/api/v1/auth/route.ts`.
+- Hardcoded Android keystore credentials (`parisar2026`) in `.github/workflows/build-apk.yml` and `android/app/build.gradle`.
+
+
+----------------------------------------------------------------------------------------------------
+  H. UX Strengths
+----------------------------------------------------------------------------------------------------
+- Clean, low-density Student Home and Event Cards ("One Screen = One Clear Purpose").
+- Native mobile feel with `overscroll-behavior: none`, `OVER_SCROLL_NEVER`, 46px touch inputs, and role-specific bottom navigation bars.
+- Instant judge demo ergonomics via 1-click Demo Triggers and Turnstile Test Passes.
+
+
+----------------------------------------------------------------------------------------------------
+  I. UX Weaknesses
+----------------------------------------------------------------------------------------------------
+- No edit modal for an existing published event's details (organizers can only change status or cancel).
+- No native camera activation when tapping the scanner reticle on mobile.
+
+
+----------------------------------------------------------------------------------------------------
+  J. Android App Strengths
+----------------------------------------------------------------------------------------------------
+- Lightweight (~4.6 MB) native Java APK (`minSdk 26`, `targetSdk 34`).
+- Eliminates browser chrome, disables accidental pull-to-refresh, supports `localStorage`, handles hardware back navigation, and provides a branded native offline retry screen.
+
+
+----------------------------------------------------------------------------------------------------
+  K. Android App Weaknesses
+----------------------------------------------------------------------------------------------------
+- Requires active internet connectivity to load `https://parisar-eight.vercel.app` (passes are not cached in native SQLite/Room when completely offline).
+- `WebSettings.LOAD_NO_CACHE` increases data usage and load time on slow cellular connections.
+
+
+----------------------------------------------------------------------------------------------------
+  L. Database Strengths
+----------------------------------------------------------------------------------------------------
+- Rich, strongly typed relational-style domain entities (`User`, `OrganizerVerificationRequest`, `CampusVenue`, `CampusEvent`, `Registration`, `AttendanceRecord`, `Certificate`, `CampusNotification`, `EventFeedback`) in `src/types/index.ts`.
+- Authentic DHSGSU seed dataset in `src/lib/mockData.ts`.
+
+
+----------------------------------------------------------------------------------------------------
+  M. Database Weaknesses
+----------------------------------------------------------------------------------------------------
+- In-memory serverless store (`globalThis.__PARISAR_SHARED_DB__`) is wiped on Vercel cold starts.
+- In `server/index.js`, `mongoose.connect()` is called without Mongoose model schemas (`User.find()`, etc. are still in-memory array methods).
+
+
+----------------------------------------------------------------------------------------------------
+  N. API Strengths
+----------------------------------------------------------------------------------------------------
+- Clean `ApiResponse<T>` envelope (`{ success, data, error: { code, message } }`) across both client and server.
+- Multi-identifier login normalization (`email` or `rollNumber`) with automatic local-to-server account sync fallback in `AppContext.tsx`.
+
+
+----------------------------------------------------------------------------------------------------
+  O. API Weaknesses
+----------------------------------------------------------------------------------------------------
+- Only `/api/v1/auth` is implemented as a Next.js Route Handler; events, registrations, attendance, and certificates are not yet backed by Next.js API routes.
+
+
+----------------------------------------------------------------------------------------------------
+  P. Top 10 Fixes Needed Before Real Production Use at DHSGSU
+----------------------------------------------------------------------------------------------------
+1. **Replace `globalThis.__PARISAR_SHARED_DB__` with MongoDB Atlas / PostgreSQL** so accounts, events, and passes persist permanently across serverless cold starts.
+2. **Migrate Events, Registrations, Attendance, and Certificates from `localStorage` to API routes** so actions taken by Organizers/Admins propagate in real time to all Student devices.
+3. **Hash all user passwords using `bcrypt` or `argon2`** and strip `password` fields from all client storage.
+4. **Sign `/api/v1/auth` tokens with `jsonwebtoken` (`HS256`)** and store sessions in `HttpOnly; Secure` cookies.
+5. **Add JWT authentication & Admin role middleware** to `review-organizer` and `sync-state` actions in `/api/v1/auth/route.ts`.
+6. **Integrate `html5-qrcode` or `BarcodeDetector`** into `QRScannerView.tsx` for live optical camera QR scanning.
+7. **Sign QR pass tokens with an HMAC signature or UUID** to prevent predictable token guessing (`PARISAR-PASS-*`).
+8. **Move the Android release keystore to GitHub Secrets** so APK updates share a permanent cryptographic signature.
+9. **Cache Student Passes offline in Android** (using `LOAD_DEFAULT` / Service Worker or native `SharedPreferences`) for auditoriums with poor cellular reception.
+10. **Remove the duplicate `web/` directory** so the repository maintains a single source of truth under `src/`.
+
+
+----------------------------------------------------------------------------------------------------
+  Q. Top 20 Questions Judges Are Most Likely to Ask
+----------------------------------------------------------------------------------------------------
+1. What does "PARISAR" mean and how is it tailored to DHSGSU Sagar?
+2. What are the exact user roles in your system and how are they separated?
+3. Can any student sign up as an Organizer and immediately publish an event?
+4. How does the Organizer Verification workflow work from signup to Admin approval?
+5. What happens if the Admin rejects an Organizer's verification request?
+6. How does an event move from creation to appearing on a student's feed?
+7. How do you prevent two organizers from double-booking Swarna Jayanti Auditorium?
+8. What happens when an event reaches its maximum seat capacity or passes its registration deadline?
+9. How are QR passes generated when a student registers?
+10. What are the 5 outcomes the QR Attendance Scanner can return?
+11. How do you prevent a student from sharing a screenshot of their QR pass with a friend?
+12. Does the QR scanner use the live camera or simulated tokens in this demo?
+13. How do you guarantee that certificates are only issued to students who actually attended?
+14. How can an external employer or faculty member verify a PARISAR certificate?
+15. Is your Android app built with React Native, Flutter, or native Android WebView?
+16. Why did you disable pull-to-refresh on the Android app and how did you do it?
+17. How do the Web app and Android app share authentication?
+18. Where is your database hosted right now, and why did you use an in-memory store + `localStorage`?
+19. Why did you choose a warm sandstone/ivory palette instead of a dark-mode UI?
+20. What would you change first to scale PARISAR to all 15,000+ students at DHSGSU?
+
+
+----------------------------------------------------------------------------------------------------
+  R. Pitch Scripts: 30-Second, 2-Minute, and 5-Minute Walkthroughs
+----------------------------------------------------------------------------------------------------
+
+
+  [ ⏱️ 30-Second Elevator Pitch ]
+> "PARISAR—meaning *university campus*—is the official campus event and credential platform engineered for Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar. It replaces scattered WhatsApp notices, unverified Google Forms, and paper attendance sheets with a strict three-role architecture: **Students** discover events and get single-use QR passes; **Organizers** must be verified by the Dean of Students' Welfare before proposing events, scanning attendance, or exporting CSV rosters; and **University Administrators** govern organizer verification and event authorization across both Web and Android."
+
+
+  [ ⏱️ 2-Minute Product & Architecture Pitch ]
+> "At DHSGSU across Patharia Hills, campus events suffer from four broken links: fragmented discovery, seat hoarding on Google Forms, proxy signatures on paper attendance sheets, and unverified PDF certificates.
+>
+> We built **PARISAR** using Next.js 16, React 19, TypeScript, and Tailwind CSS v4, paired with a native Java Android client (`SDK 34`).
+>
+> First, **Governance**: Unlike prototypes with a fake persona switcher, PARISAR enforces strict role-based authentication across Student, Organizer, and University Administrator portals. When a faculty convener or club lead signs up as an Organizer, their account is locked in a `PENDING` state until the University Administrator approves their dossier. Even after verification, new events enter `PENDING_REVIEW` with automatic venue time-overlap conflict detection before the Admin publishes them.
+>
+> Second, **Student Simplicity**: Following our *'One Screen = One Clear Purpose'* principle, students browse upcoming workshops and cultural fests, view an architectural schematic map of Patharia Hills venues, and register in one tap to generate a `PARISAR-PASS-*` QR credential.
+>
+> Third, **Turnstile Verification & Credentials**: At the venue door, the Organizer's QR Scanner validates passes across 5 states—catching duplicate scans, wrong-event passes, and unregistered tokens—and unlocks batch cryptographic certificate issuance (`DHSGSU-2026-*`) exclusively for verified attendees."
+
+
+  [ ⏱️ 5-Minute Technical Defense & Live Demo Script ]
+> 1. **Minute 1 — Problem & Brand Identity**: Introduce PARISAR (`परिसर`) for Dr. Harisingh Gour Vishwavidyalaya, Sagar. Highlight the *Tactile Academic Ledger* design system (`#F4F0E8` sandstone canvas, `#B6533C` Sagar terracotta, `#18212B` ink borders) built for high-contrast legibility on mobile screens in daylight.
+> 2. **Minute 2 — Role Separation & Organizer Verification Gate**: Open `/login`. Log in as Pending Organizer `Priya Patel` (`Y23122018`) to prove she is locked out of the Organizer Console (`OrganizerPendingView`). Log out, open `/admin/login` as `Prof. S.P. Gautam` (`ADMIN-DSW-001`), navigate to **Organizer Requests**, and approve Priya's application—demonstrating live cross-role governance.
+> 3. **Minute 3 — Event Creation, Conflict Detection & Moderation**: Log in as Verified Organizer `Dr. Alok Sahay` (`EMP-DCSA-104`). Open **Create Event**, select *Swarna Jayanti Auditorium*, and show how `checkVenueConflict()` catches overlapping time slots. Submit an event for review, then approve it from the Admin **Event Moderation** table.
+> 4. **Minute 4 — Student Discovery, Registration & QR Pass**: Log in as Student `Amit Sharma` (`Y23141042`). Show the clean **Student Home**, inspect the **Campus Map** of Patharia Hills, open an event modal, register, and display the generated QR Digital Event Pass (`EventPassModal`) and **Event Passport**.
+> 5. **Minute 5 — Turnstile QR Scanning, Certificates & Android Client**: Back in the Organizer Console, open **QR Attendance Scanner** (`QRScannerView`). Click the 4 Turnstile Verification Test buttons to demonstrate `VALID`, `ALREADY CHECKED IN`, `WRONG EVENT`, and `REGISTRATION NOT FOUND` states. Export the CSV roster in **ParticipantsView**, issue batch certificates in **CertificatesManager**, and conclude with how our GitHub Actions CI/CD pipeline compiles the signed Android APK (`MainActivity.java`) with disabled pull-to-refresh and offline resilience."
