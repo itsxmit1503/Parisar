@@ -189,6 +189,17 @@ export async function POST(req: NextRequest) {
         return err('ATTENDANCE_FINALIZED', 'Attendance for this event has already closed.', 403);
       }
 
+      if (
+        event.attendanceSessionStatus !== 'OPEN' &&
+        event.attendanceSessionStatus !== 'ACTIVE'
+      ) {
+        return err(
+          'ATTENDANCE_NOT_OPEN',
+          'Attendance has not started yet for this event.',
+          400
+        );
+      }
+
       // Invalidate any previous unused temporary QR tokens for this student & event
       for (const t of db.tempQrTokens) {
         if (t.eventId === event._id && t.studentId === studentId && !t.usedAt) {
@@ -220,6 +231,13 @@ export async function POST(req: NextRequest) {
       await persistSharedDb();
 
       return ok({
+        token: tempToken.token,
+        expiresAt: tempToken.expiresAt,
+        expiresInSeconds: validitySeconds,
+        eventId: event._id,
+        eventTitle: event.title,
+        studentName: student.name,
+        rollNumber: reg.userRollNumber,
         tempQr: tempToken,
         validitySeconds,
       });
@@ -235,7 +253,7 @@ export async function POST(req: NextRequest) {
           status: 'INVALID',
           message: 'Invalid attendance token.',
         };
-        return ok({ scanResult: result }, 400);
+        return ok({ ...result, scanResult: result }, 400);
       }
 
       if (!event) {
@@ -272,7 +290,7 @@ export async function POST(req: NextRequest) {
           status: 'INVALID',
           message: 'Invalid attendance token.',
         };
-        return ok({ scanResult: result });
+        return ok({ ...result, scanResult: result });
       }
 
       // Check 4: Token belongs to the correct event
@@ -284,7 +302,7 @@ export async function POST(req: NextRequest) {
           intendedEventTitle: intendedEvt?.title,
           currentEventTitle: event.title,
         };
-        return ok({ scanResult: result });
+        return ok({ ...result, scanResult: result });
       }
 
       // Check 5: Student is actually registered for that event
@@ -301,7 +319,7 @@ export async function POST(req: NextRequest) {
           status: 'NOT_REGISTERED',
           message: 'Student is not registered for this event.',
         };
-        return ok({ scanResult: result });
+        return ok({ ...result, scanResult: result });
       }
 
       // Check 8: Student account is valid/active
@@ -311,7 +329,7 @@ export async function POST(req: NextRequest) {
           status: 'INVALID',
           message: 'Invalid attendance token.',
         };
-        return ok({ scanResult: result });
+        return ok({ ...result, scanResult: result });
       }
 
       // Check 7: Student has not already been marked present
@@ -331,7 +349,7 @@ export async function POST(req: NextRequest) {
           attendee: student,
           checkedInAt: existingAtt.checkedInAt,
         };
-        return ok({ scanResult: result });
+        return ok({ ...result, scanResult: result });
       }
 
       // Check 2 & 3: Token has not expired AND has not already been used
@@ -341,7 +359,7 @@ export async function POST(req: NextRequest) {
           status: 'EXPIRED',
           message: 'QR expired. Ask the student to generate a new attendance QR.',
         };
-        return ok({ scanResult: result });
+        return ok({ ...result, scanResult: result });
       }
 
       // Mark temporary QR token as used immediately (one-time use)
@@ -401,6 +419,8 @@ export async function POST(req: NextRequest) {
       };
 
       return ok({
+        ...successResult,
+        checkedInAt: nowIso,
         scanResult: successResult,
         attendanceRecord: newRecord,
         attendance: db.attendance.filter(a => a.eventId === event._id),
@@ -422,16 +442,18 @@ export async function POST(req: NextRequest) {
         return err('EVENT_NOT_FOUND', 'Event not found.', 404);
       }
 
-      const studentId = auth.authenticated
-        ? auth.user.sub
-        : (body.studentId || body.userId || '').trim();
+      const studentId =
+        auth.authenticated && actorRole === 'student'
+          ? auth.user.sub
+          : (body.studentId || body.userId || (auth.authenticated ? auth.user.sub : '')).trim();
 
       // Allow organizer/admin to trigger a random checkpoint across all active online sessions for the event
-      if (action === 'trigger-checkpoint' && !studentId && (actorRole === 'organizer' || actorRole === 'admin')) {
+      if (action === 'trigger-checkpoint' && !body.studentId && (actorRole === 'organizer' || actorRole === 'admin')) {
         const activeSessions = db.attendanceSessions.filter(
           s => s.eventId === event._id && s.status === 'ACTIVE'
         );
         let triggeredCount = 0;
+        let lastCreatedCp: OnlineAttendanceCheckpoint | null = null;
         for (const sess of activeSessions) {
           expireStaleCheckpoints(sess);
           const checkpoints = Array.isArray(sess.checkpoints) ? [...sess.checkpoints] : [];
@@ -440,6 +462,7 @@ export async function POST(req: NextRequest) {
             const nextNum = checkpoints.length + 1;
             const cp: OnlineAttendanceCheckpoint = {
               id: `cp-${nowMs}-${sess.studentId}-${nextNum}`,
+              checkpointId: `cp-${nowMs}-${sess.studentId}-${nextNum}`,
               sessionId: sess.id,
               eventId: event._id,
               studentId: sess.studentId || '',
@@ -452,11 +475,28 @@ export async function POST(req: NextRequest) {
             checkpoints.push(cp);
             sess.checkpoints = checkpoints;
             sess.updatedAt = nowIso;
+            lastCreatedCp = cp;
             triggeredCount++;
           }
         }
+        const summaryCheckpoint: OnlineAttendanceCheckpoint = lastCreatedCp || {
+          id: `cp-${nowMs}-event`,
+          checkpointId: `cp-${nowMs}-event`,
+          eventId: event._id,
+          checkpointNumber: (event.onlineCheckpoints?.length || 0) + 1,
+          triggeredAt: nowIso,
+          expiresAt: new Date(nowMs + policy.checkpointValiditySeconds * 1000).toISOString(),
+          verifiedAt: null,
+          status: 'ACTIVE',
+        };
+        event.attendanceSessionStatus = 'OPEN';
         await persistSharedDb();
-        return ok({ triggeredCount, sessions: activeSessions });
+        return ok({
+          triggeredCount,
+          sessions: activeSessions,
+          checkpoint: summaryCheckpoint,
+          activeCheckpoint: summaryCheckpoint,
+        });
       }
 
       const reg = db.registrations.find(
@@ -483,6 +523,7 @@ export async function POST(req: NextRequest) {
         // Server schedules/activates Checkpoint #1 with a strict 2-minute (120s) verification window
         const firstCheckpoint: OnlineAttendanceCheckpoint = {
           id: `cp-${nowMs}-${studentId}-1`,
+          checkpointId: `cp-${nowMs}-${studentId}-1`,
           sessionId: `osess-${nowMs}-${studentId}`,
           eventId: event._id,
           studentId,
@@ -535,6 +576,7 @@ export async function POST(req: NextRequest) {
           const nextNum = checkpoints.length + 1;
           const newCp: OnlineAttendanceCheckpoint = {
             id: `cp-${nowMs}-${studentId}-${nextNum}`,
+            checkpointId: `cp-${nowMs}-${studentId}-${nextNum}`,
             sessionId: session.id,
             eventId: event._id,
             studentId,
@@ -564,7 +606,7 @@ export async function POST(req: NextRequest) {
       if (action === 'verify-checkpoint') {
         const checkpointId = (body.checkpointId || '').trim();
         const targetCp = checkpointId
-          ? checkpoints.find(c => c.id === checkpointId)
+          ? checkpoints.find(c => c.id === checkpointId || c.checkpointId === checkpointId)
           : checkpoints.find(c => c.status === 'ACTIVE');
 
         if (!targetCp) {
@@ -624,7 +666,8 @@ export async function POST(req: NextRequest) {
       }
 
       // Authoritative server-side calculation of online participation & certificate eligibility (Sections 18, 19, 21)
-      const verifiedCheckpointsCount = checkpoints.filter(c => c.status === 'VERIFIED').length;
+      const verifiedCheckpoints = checkpoints.filter(c => c.status === 'VERIFIED');
+      const verifiedCheckpointsCount = verifiedCheckpoints.length;
       const requiredCheckpointsCount = Math.max(1, policy.requiredCheckpoints || 2);
       const totalCheckpointsCount = Math.max(requiredCheckpointsCount, policy.totalCheckpoints || 3);
 
@@ -659,6 +702,8 @@ export async function POST(req: NextRequest) {
         checkedOutAt: session.leftAt,
         checkedInBy: studentId,
         method: 'online_session',
+        initialCheckInDone: true,
+        verifiedCheckpoints: verifiedCheckpoints.map(c => c.id),
         checkpointsVerified: verifiedCheckpointsCount,
         checkpointsRequired: requiredCheckpointsCount,
         checkpointsTotal: totalCheckpointsCount,
@@ -685,11 +730,19 @@ export async function POST(req: NextRequest) {
         reg.checkedInAt = session.joinedAt || nowIso;
       }
 
+      const activeCp = checkpoints.find(c => c.status === 'ACTIVE') || checkpoints[checkpoints.length - 1] || null;
       await persistSharedDb();
       return ok({
         session,
         attendance: attRec,
+        attendanceRecord: attRec,
+        checkpoint: activeCp,
         activeCheckpoint: checkpoints.find(c => c.status === 'ACTIVE') || null,
+        checkpoints,
+        verifiedCheckpointsCount,
+        requiredCheckpoints: requiredCheckpointsCount,
+        totalCheckpoints: totalCheckpointsCount,
+        eligibleForCertificate: isEligible,
         policy,
       });
     }

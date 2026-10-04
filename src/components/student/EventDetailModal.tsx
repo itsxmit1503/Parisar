@@ -110,12 +110,12 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const eventMode = event.eventMode || 'OFFLINE';
   const isSessionActive =
     event.attendanceSessionStatus === 'OPEN' ||
-    event.attendanceSessionStatus === 'ACTIVE' ||
-    event.status === 'ONGOING';
+    event.attendanceSessionStatus === 'ACTIVE';
 
-  const requiredCheckpoints = event.onlinePolicy?.requiredCheckpoints ?? 2;
-  const totalCheckpoints = event.onlinePolicy?.totalCheckpoints ?? 3;
-  const verifiedCheckpointsCount = userAttendance?.verifiedCheckpoints?.length ?? 0;
+  const requiredCheckpoints = event.onlinePolicy?.requiredCheckpoints ?? event.onlineAttendancePolicy?.requiredCheckpoints ?? 2;
+  const totalCheckpoints = event.onlinePolicy?.totalCheckpoints ?? event.onlineAttendancePolicy?.totalCheckpoints ?? 3;
+  const verifiedCheckpointsCount =
+    userAttendance?.checkpointsVerified ?? userAttendance?.verifiedCheckpoints?.length ?? 0;
 
   const handleRegister = async () => {
     setIsRegistering(true);
@@ -563,7 +563,15 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                       : `Complete ${requiredCheckpoints} of ${totalCheckpoints} 2-minute checkpoints`}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {!userAttendance ? (
+                    {userAttendance?.eligibleForCertificate ? (
+                      <span className="px-2 py-1 bg-[#EBF3ED] rounded-[3px] border border-[#2F613B]/30 text-[#2F613B] font-bold text-[11px]">
+                        ✓ Attendance Recorded
+                      </span>
+                    ) : !isSessionActive && !userAttendance ? (
+                      <span className="px-2 py-1 bg-[#EAE5DB] rounded-[3px] border border-[#B9B4AA] text-[#62605B] text-[11px]">
+                        Attendance has not started yet.
+                      </span>
+                    ) : !userAttendance ? (
                       <Button
                         variant="primary"
                         size="sm"

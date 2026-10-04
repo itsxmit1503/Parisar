@@ -2175,7 +2175,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const payload = await res.json();
       if (res.ok && payload.success && payload.data) {
-        return { success: true, data: payload.data };
+        const raw = payload.data;
+        const token: string | undefined = raw.token || raw.tempQr?.token;
+        const expiresAt: string | undefined = raw.expiresAt || raw.tempQr?.expiresAt;
+        if (token && expiresAt) {
+          return {
+            success: true,
+            data: {
+              token,
+              expiresAt,
+              expiresInSeconds: raw.expiresInSeconds ?? raw.validitySeconds ?? 60,
+              eventId: raw.eventId || raw.tempQr?.eventId || eventId,
+              eventTitle: raw.eventTitle || '',
+              studentName: raw.studentName || currentUser.name,
+              rollNumber: raw.rollNumber || currentUser.rollNumber || '',
+            },
+          };
+        }
       }
       return {
         success: false,
@@ -2205,10 +2221,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       });
       const payload = await res.json();
       if (payload.success && payload.data) {
-        const result: ScanVerificationResult = payload.data;
+        const result: ScanVerificationResult = payload.data.scanResult || payload.data;
         if (result.status === 'SUCCESS' && result.registration) {
           const reg = result.registration;
-          const nowIso = result.checkedInAt || new Date().toISOString();
+          const nowIso = result.checkedInAt || payload.data.checkedInAt || new Date().toISOString();
           setRegistrations(prev =>
             prev.map(r => (r._id === reg._id ? { ...r, checkedInAt: nowIso } : r))
           );

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AppProvider, useApp } from '../context/AppContext';
 import { ToastProvider } from '../components/ui/Toast';
 import { Navbar, ActiveTab } from '../components/layout/Navbar';
@@ -89,7 +89,7 @@ interface MainAppProps {
 export function MainApp({ initialTab = 'landing' }: MainAppProps) {
   const { currentUser, isAuthenticated, events, registrations } = useApp();
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>(initialTab);
+  const [activeTab, setActiveTabState] = useState<ActiveTab>(initialTab);
   const [targetVenueId, setTargetVenueId] = useState<string | undefined>(undefined);
   const [targetEventId, setTargetEventId] = useState<string | undefined>(undefined);
 
@@ -100,27 +100,95 @@ export function MainApp({ initialTab = 'landing' }: MainAppProps) {
   const [isAnnouncementsOpen, setIsAnnouncementsOpen] = useState(false);
   const [isApkModalOpen, setIsApkModalOpen] = useState(false);
 
+  const isPopStateRef = useRef(false);
+  const prevModalOpenRef = useRef(false);
+
+  const setActiveTab = (nextTab: ActiveTab) => {
+    setActiveTabState(prev => {
+      if (prev !== nextTab && typeof window !== 'undefined' && !isPopStateRef.current) {
+        window.history.pushState({ parisarTab: nextTab }, '');
+      }
+      return nextTab;
+    });
+  };
+
   // Sync initial URL pathname or ?tab= query parameter on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab') as ActiveTab | null;
+      let resolvedTab = initialTab;
       if (tabParam) {
-        setActiveTab(tabParam);
-        return;
-      }
-      const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
-      if (PATH_TO_TAB_MAP[cleanPath] && initialTab === 'landing') {
-        const mappedTab = PATH_TO_TAB_MAP[cleanPath];
-        if (mappedTab === 'organizer-create') {
-          setActiveTab('organizer-events');
-          setIsCreateEventOpen(true);
-        } else {
-          setActiveTab(mappedTab);
+        resolvedTab = tabParam;
+        setActiveTabState(tabParam);
+      } else {
+        const cleanPath = window.location.pathname.replace(/\/$/, '') || '/';
+        if (PATH_TO_TAB_MAP[cleanPath] && initialTab === 'landing') {
+          const mappedTab = PATH_TO_TAB_MAP[cleanPath];
+          if (mappedTab === 'organizer-create') {
+            resolvedTab = 'organizer-events';
+            setActiveTabState('organizer-events');
+            setIsCreateEventOpen(true);
+          } else {
+            resolvedTab = mappedTab;
+            setActiveTabState(mappedTab);
+          }
         }
       }
+      window.history.replaceState({ parisarTab: resolvedTab }, '');
     }
   }, [initialTab]);
+
+  // Push history entry when a modal opens so Android / Browser Back closes the modal first
+  const anyModalOpen = Boolean(
+    activePassData ||
+      selectedEventForDetail ||
+      isCreateEventOpen ||
+      isAnnouncementsOpen ||
+      isApkModalOpen
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (anyModalOpen && !prevModalOpenRef.current && !isPopStateRef.current) {
+      window.history.pushState({ parisarTab: activeTab, modalOpen: true }, '');
+    }
+    prevModalOpenRef.current = anyModalOpen;
+  }, [anyModalOpen, activeTab]);
+
+  // Handle Browser / Android WebView Back button (popstate)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handlePopState = (e: PopStateEvent) => {
+      isPopStateRef.current = true;
+      if (activePassData) {
+        setActivePassData(null);
+      } else if (selectedEventForDetail) {
+        setSelectedEventForDetail(null);
+      } else if (isCreateEventOpen) {
+        setIsCreateEventOpen(false);
+      } else if (isAnnouncementsOpen) {
+        setIsAnnouncementsOpen(false);
+      } else if (isApkModalOpen) {
+        setIsApkModalOpen(false);
+      } else if (e.state?.parisarTab) {
+        setActiveTabState(e.state.parisarTab as ActiveTab);
+      }
+      setTimeout(() => {
+        isPopStateRef.current = false;
+      }, 0);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [
+    activePassData,
+    selectedEventForDetail,
+    isCreateEventOpen,
+    isAnnouncementsOpen,
+    isApkModalOpen,
+  ]);
 
   // Handle opening pass by event ID
   const handleOpenPassByEventId = (eventId: string) => {

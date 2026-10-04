@@ -58,15 +58,14 @@ public class MainActivity extends AppCompatActivity {
 
         btnRetry.setOnClickListener(v -> loadPortal());
 
-        // Handle hardware Back button naturally
+        // Handle Android 13+ system back gesture & hardware Back button naturally
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
             @Override
             public void handleOnBackPressed() {
-                if (webView.canGoBack()) {
+                if (webView != null && webView.canGoBack()) {
                     webView.goBack();
                 } else {
-                    setEnabled(false);
-                    getOnBackPressedDispatcher().onBackPressed();
+                    finish();
                 }
             }
         });
