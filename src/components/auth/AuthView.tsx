@@ -269,13 +269,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
               <h1 className="text-2xl sm:text-3xl font-black text-[#18212B] tracking-tight font-serif">
                 {mode === 'login' && 'Welcome back to PARISAR'}
                 {mode === 'signup' && 'Create your PARISAR account'}
-                {mode === 'admin-login' && 'University Administrator Authority'}
+                {mode === 'admin-login' && 'PARISAR — University Administration'}
                 {mode === 'forgot-password' && 'Campus Credential Recovery'}
               </h1>
               <p className="text-xs text-[#62605B]">
                 {mode === 'login' && 'Sign in with your university roll number, employee ID, or institutional email.'}
                 {mode === 'signup' && 'Select your university role below to register for campus events or apply for organizer privileges.'}
-                {mode === 'admin-login' && 'Controlled authentication portal for the Office of the Dean of Students Welfare (DSW) & Proctor.'}
+                {mode === 'admin-login' && 'Authorized university administrators only. No public administrator signup is permitted.'}
                 {mode === 'forgot-password' && 'Verify your university enrollment or employee ID to receive a password reset token.'}
               </p>
             </div>
@@ -710,27 +710,27 @@ export const AuthView: React.FC<AuthViewProps> = ({
           )}
 
           {/* ========================================== */}
-          {/* 3. UNIVERSITY ADMIN LOGIN (Section 8)      */}
+          {/* 3. UNIVERSITY ADMIN LOGIN (Sections 16-24) */}
           {/* ========================================== */}
           {mode === 'admin-login' && (
             <form onSubmit={e => handleLogin(e, true)} className="space-y-4">
               <div className="p-3.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs text-[#18212B] flex items-start gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-[#B6533C] shrink-0 mt-0.5" />
                 <div className="leading-relaxed">
-                  <strong>Restricted Proctorial Portal:</strong> Administrator accounts are pre-authorized by Dr. Harisingh Gour Vishwavidyalaya and cannot be created via public signup.
+                  <strong>Authorized university administrators only.</strong> Administrator accounts are provisioned by Dr. Harisingh Gour Vishwavidyalaya and cannot be created via public signup.
                 </div>
               </div>
 
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B] mb-1.5">
-                  Authorized Administrator ID / DSW Email *
+                  Admin ID / University Email *
                 </label>
                 <div className="flex items-center gap-2.5 bg-[#EAE5DB] border border-[#B9B4AA] px-3.5 py-2.5 rounded-[3px] focus-within:border-[#18212B] focus-within:bg-[#FCFAF5]">
                   <KeyRound className="w-4 h-4 text-[#B6533C] shrink-0" />
                   <input
                     type="text"
                     required
-                    placeholder="e.g. dsw@dhsgsu.edu.in or ADMIN-DSW-001"
+                    placeholder="Enter authorized administrator email or ID"
                     value={loginIdentifier}
                     onChange={e => setLoginIdentifier(e.target.value)}
                     className="w-full bg-transparent border-none text-xs font-mono font-bold text-[#18212B] placeholder:text-[#62605B] focus:outline-none"
@@ -740,7 +740,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B] mb-1.5">
-                  Administrative Passkey *
+                  Password *
                 </label>
                 <div className="flex items-center gap-2.5 bg-[#EAE5DB] border border-[#B9B4AA] px-3.5 py-2.5 rounded-[3px] focus-within:border-[#18212B] focus-within:bg-[#FCFAF5]">
                   <Lock className="w-4 h-4 text-[#B6533C] shrink-0" />
@@ -764,7 +764,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                   leftIcon={<ShieldCheck className="w-4 h-4 text-[#B6533C]" />}
                   className="w-full justify-center py-3 text-sm"
                 >
-                  Authenticate Administrator
+                  Sign In
                 </Button>
               </div>
 
@@ -776,13 +776,9 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 >
                   ← Standard Student / Organizer Login
                 </button>
-                <button
-                  type="button"
-                  onClick={() => fillCredential('dsw@dhsgsu.edu.in', true)}
-                  className="font-mono text-[11px] font-bold text-[#B6533C] underline cursor-pointer"
-                >
-                  Fill DSW Admin Credentials
-                </button>
+                <span className="font-mono text-[10px] text-[#62605B]">
+                  Protected Route: /admin/login
+                </span>
               </div>
             </form>
           )}
@@ -835,73 +831,63 @@ export const AuthView: React.FC<AuthViewProps> = ({
             </form>
           )}
 
-          {/* Discreet Reference Directory Accordion for Evaluators */}
-          <div className="pt-4 border-t border-[#B9B4AA]/60">
-            <button
-              type="button"
-              onClick={() => setShowDemoHelper(!showDemoHelper)}
-              className="w-full flex items-center justify-between text-[11px] font-mono text-[#62605B] hover:text-[#18212B] py-1 cursor-pointer"
-            >
-              <span>DHSGSU Pre-Seeded Campus Directory Reference (Click to auto-fill login)</span>
-              {showDemoHelper ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
+          {/* Discreet Reference Directory Accordion for Student & Organizer Evaluators */}
+          {mode !== 'admin-login' && (
+            <div className="pt-4 border-t border-[#B9B4AA]/60">
+              <button
+                type="button"
+                onClick={() => setShowDemoHelper(!showDemoHelper)}
+                className="w-full flex items-center justify-between text-[11px] font-mono text-[#62605B] hover:text-[#18212B] py-1 cursor-pointer"
+              >
+                <span>DHSGSU Student &amp; Organizer Directory Reference</span>
+                {showDemoHelper ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
 
-            {showDemoHelper && (
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono bg-[#EAE5DB]/50 p-3 rounded-[3px] border border-[#B9B4AA]">
-                <button
-                  type="button"
-                  onClick={() => fillCredential('Y23141042')}
-                  className="p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer"
-                >
-                  <div className="font-bold text-[#2F613B]">STUDENT ACCOUNT</div>
-                  <div className="text-[#18212B] font-sans font-bold">Amit Sharma</div>
-                  <div className="text-[#62605B] text-[10px]">ID: Y23141042</div>
-                </button>
+              {showDemoHelper && (
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-mono bg-[#EAE5DB]/50 p-3 rounded-[3px] border border-[#B9B4AA]">
+                  <button
+                    type="button"
+                    onClick={() => fillCredential('Y23141042')}
+                    className="p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer"
+                  >
+                    <div className="font-bold text-[#2F613B]">STUDENT ACCOUNT</div>
+                    <div className="text-[#18212B] font-sans font-bold">Amit Sharma</div>
+                    <div className="text-[#62605B] text-[10px]">ID: Y23141042</div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => fillCredential('alok.sahay@dhsgsu.edu.in')}
-                  className="p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer"
-                >
-                  <div className="font-bold text-[#B08A4A]">APPROVED ORGANIZER</div>
-                  <div className="text-[#18212B] font-sans font-bold">Dr. Alok Sahay</div>
-                  <div className="text-[#62605B] text-[10px]">ID: EMP-DCSA-104</div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => fillCredential('alok.sahay@dhsgsu.edu.in')}
+                    className="p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer"
+                  >
+                    <div className="font-bold text-[#B08A4A]">APPROVED ORGANIZER</div>
+                    <div className="text-[#18212B] font-sans font-bold">Dr. Alok Sahay</div>
+                    <div className="text-[#62605B] text-[10px]">ID: EMP-DCSA-104</div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => fillCredential('Y23122018')}
-                  className="p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer"
-                >
-                  <div className="font-bold text-[#8F5E15]">PENDING ORGANIZER</div>
-                  <div className="text-[#18212B] font-sans font-bold">Priya Patel</div>
-                  <div className="text-[#62605B] text-[10px]">ID: Y23122018</div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => fillCredential('Y23122018')}
+                    className="p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer"
+                  >
+                    <div className="font-bold text-[#8F5E15]">PENDING ORGANIZER</div>
+                    <div className="text-[#18212B] font-sans font-bold">Priya Patel</div>
+                    <div className="text-[#62605B] text-[10px]">ID: Y23122018</div>
+                  </button>
 
-                <button
-                  type="button"
-                  onClick={() => fillCredential('Y23141088')}
-                  className="p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer"
-                >
-                  <div className="font-bold text-[#A83226]">REJECTED ORGANIZER</div>
-                  <div className="text-[#18212B] font-sans font-bold">Rohan Mehra</div>
-                  <div className="text-[#62605B] text-[10px]">ID: Y23141088</div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => fillCredential('dsw@dhsgsu.edu.in', true)}
-                  className="sm:col-span-2 p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer flex items-center justify-between"
-                >
-                  <div>
-                    <div className="font-bold text-[#B6533C]">UNIVERSITY ADMINISTRATOR (CONTROLLED)</div>
-                    <div className="text-[#18212B] font-sans font-bold">Prof. S.P. Gautam (Dean of Students&apos; Welfare)</div>
-                  </div>
-                  <span className="text-[#62605B] text-[10px]">ID: dsw@dhsgsu.edu.in</span>
-                </button>
-              </div>
-            )}
-          </div>
+                  <button
+                    type="button"
+                    onClick={() => fillCredential('Y23141088')}
+                    className="p-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] text-left hover:border-[#18212B] transition-colors cursor-pointer"
+                  >
+                    <div className="font-bold text-[#A83226]">REJECTED ORGANIZER</div>
+                    <div className="text-[#18212B] font-sans font-bold">Rohan Mehra</div>
+                    <div className="text-[#62605B] text-[10px]">ID: Y23141088</div>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>

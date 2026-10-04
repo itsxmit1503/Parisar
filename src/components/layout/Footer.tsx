@@ -1,5 +1,6 @@
 import React from 'react';
-import { Smartphone, Shield, Database, Server, Globe, MapPin } from 'lucide-react';
+import Link from 'next/link';
+import { Smartphone, Shield, Database, Server, Globe, MapPin, Lock } from 'lucide-react';
 import { ParisarLogo } from '../ui/ParisarLogo';
 
 export const Footer: React.FC<{ onOpenApkModal: () => void }> = ({ onOpenApkModal }) => {
@@ -10,7 +11,7 @@ export const Footer: React.FC<{ onOpenApkModal: () => void }> = ({ onOpenApkModa
           {/* Brand Info */}
           <div className="md:col-span-2 space-y-3">
             <ParisarLogo size="md" variant="full" />
-            
+
             <p className="text-[#62605B] leading-relaxed max-w-md text-xs">
               <strong className="text-[#18212B]">PARISAR (परिसर)</strong> is the centralized university event-management and student companion platform for{' '}
               <strong className="text-[#18212B]">Dr. Harisingh Gour Vishwavidyalaya</strong> (A Central University, Sagar, Madhya Pradesh).
@@ -23,7 +24,7 @@ export const Footer: React.FC<{ onOpenApkModal: () => void }> = ({ onOpenApkModa
             <div className="flex flex-wrap items-center gap-4 text-[11px] text-[#62605B] pt-1">
               <span className="flex items-center gap-1 font-medium">
                 <Shield className="w-3.5 h-3.5 text-[#B6533C]" />
-                University Registrar & DSW Verified
+                University Registrar &amp; DSW Verified
               </span>
               <span className="flex items-center gap-1 font-medium">
                 <MapPin className="w-3.5 h-3.5 text-[#64788A]" />
@@ -44,7 +45,7 @@ export const Footer: React.FC<{ onOpenApkModal: () => void }> = ({ onOpenApkModa
               </li>
               <li className="flex items-center gap-1.5">
                 <Smartphone className="w-3.5 h-3.5 text-[#B6533C]" />
-                <span>Mobile Companion (React Native Expo)</span>
+                <span>Native Android App (Java WebView + Bridge)</span>
               </li>
               <li className="flex items-center gap-1.5">
                 <Server className="w-3.5 h-3.5 text-[#64788A]" />
@@ -52,7 +53,7 @@ export const Footer: React.FC<{ onOpenApkModal: () => void }> = ({ onOpenApkModa
               </li>
               <li className="flex items-center gap-1.5">
                 <Database className="w-3.5 h-3.5 text-[#B08A4A]" />
-                <span>DHSGSU Central Database (Single Source)</span>
+                <span>DHSGSU Persistent Database</span>
               </li>
             </ul>
           </div>
@@ -63,7 +64,7 @@ export const Footer: React.FC<{ onOpenApkModal: () => void }> = ({ onOpenApkModa
               Android Companion
             </h4>
             <p className="text-[#62605B] mb-3 text-xs leading-relaxed">
-              Official DHSGSU Android APK available for optical turnstile QR scanning and offline credentials.
+              Official DHSGSU Android APK for event discovery, roster attendance management, online session validation, and offline registration cards.
             </p>
             <button
               onClick={onOpenApkModal}
@@ -79,9 +80,16 @@ export const Footer: React.FC<{ onOpenApkModal: () => void }> = ({ onOpenApkModa
           <div>
             © {new Date().getFullYear()} PARISAR • Dr. Harisingh Gour Vishwavidyalaya, Sagar (M.P.). All rights reserved.
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-[#18212B] font-bold">Modern Neo-Skeuomorphic UI • Zero Glassmorphism</span>
-            <span className="font-mono text-[#62605B]">DHSGSU-v2.6</span>
+          <div className="flex flex-wrap items-center gap-4">
+            <Link
+              href="/admin/login"
+              className="inline-flex items-center gap-1 text-[#62605B] hover:text-[#18212B] transition-colors font-mono text-[11px]"
+            >
+              <Lock className="w-3 h-3 text-[#B6533C]" />
+              <span>University Administration</span>
+            </Link>
+            <span className="text-[#B9B4AA]">•</span>
+            <span className="font-mono text-[#62605B]">DHSGSU-v3.0</span>
           </div>
         </div>
       </div>

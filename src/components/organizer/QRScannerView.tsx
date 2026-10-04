@@ -1,482 +1,736 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { ScanVerificationResult } from '../../types';
-import { 
-  Camera, 
-  CheckCircle2, 
-  AlertTriangle, 
-  XCircle, 
-  AlertOctagon, 
-  History,
-  Loader2,
+import {
+  CheckCircle2,
+  XCircle,
+  Search,
   Play,
-  Square,
-  Clock
+  Lock,
+  RotateCcw,
+  Users,
+  UserCheck,
+  UserX,
+  Percent,
+  Calendar,
+  MapPin,
+  Globe,
+  ShieldAlert,
+  Award,
+  Clock,
+  Download,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
+import { Badge } from '../ui/Badge';
+import { UserAvatar } from '../ui/UserAvatar';
 import { useToast } from '../ui/Toast';
 
 interface QRScannerViewProps {
   onNavigateToParticipants?: (eventId: string) => void;
 }
 
-export const QRScannerView: React.FC<QRScannerViewProps> = ({ onNavigateToParticipants }) => {
+export const QRScannerView: React.FC<QRScannerViewProps> = ({
+  onNavigateToParticipants,
+}) => {
   const {
     events,
-    verifyAndCheckIn,
+    registrations,
     attendance,
+    currentUser,
+    allUsers,
     startAttendanceSession,
     closeAttendanceSession,
+    markRosterAttendance,
+    markAllRosterPresent,
+    resetRosterAttendance,
     updateParticipantParticipation,
+    issueCertificatesForEvent,
   } = useApp();
   const { showToast } = useToast();
 
-  const organizerEvents = events.filter(
-    e => e.status === 'PUBLISHED' || e.status === 'APPROVED' || e.status === 'ONGOING' || e.status === 'COMPLETED'
-  );
+  // Organizer sees their own events; Admin sees all active/completed events
+  const organizerEvents = useMemo(() => {
+    const relevant = events.filter(
+      e =>
+        (currentUser.role === 'admin' || e.organizerId === currentUser._id) &&
+        e.status !== 'DRAFT' &&
+        e.status !== 'REJECTED'
+    );
+    return relevant.length > 0 ? relevant : events;
+  }, [events, currentUser]);
+
   const [selectedEventId, setSelectedEventId] = useState<string>(
-    organizerEvents[0]?._id || events[0]?._id || ''
+    organizerEvents[0]?._id || ''
   );
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL');
+  const [showFinalizeModal, setShowFinalizeModal] = useState(false);
 
-  const [inputToken, setInputToken] = useState('');
-  const [isScanning, setIsScanning] = useState(false);
-  const [lastResult, setLastResult] = useState<ScanVerificationResult | null>(null);
-  const [lastErrorSubType, setLastErrorSubType] = useState<'INVALID' | 'NOT_FOUND' | null>(null);
+  const selectedEvent = events.find(e => e._id === selectedEventId) || organizerEvents[0];
 
-  const currentEvent = events.find(e => e._id === selectedEventId) || events[0];
-  const currentEventAttendance = attendance.filter(a => a.eventId === selectedEventId);
+  const isFinalized =
+    selectedEvent?.attendanceSessionStatus === 'FINALIZED' ||
+    selectedEvent?.attendanceSessionStatus === 'CLOSED';
+  const isOpen =
+    selectedEvent?.attendanceSessionStatus === 'OPEN' ||
+    selectedEvent?.attendanceSessionStatus === 'ACTIVE';
+  const isAdmin = currentUser.role === 'admin';
+  const isLockedForCurrentUser = isFinalized && !isAdmin;
 
-  const totalEventMins = currentEvent
-    ? Math.max(
-        15,
-        Math.round(
-          (new Date(currentEvent.endTime).getTime() - new Date(currentEvent.startTime).getTime()) / 60000
-        )
-      )
-    : 60;
-  const minPercent = currentEvent?.minParticipationPercent ?? 80;
-  const requiredMins = Math.ceil((totalEventMins * minPercent) / 100);
+  // All confirmed registrations for the selected event
+  const eventRegistrations = useMemo(() => {
+    if (!selectedEvent) return [];
+    return registrations.filter(
+      r => r.eventId === selectedEvent._id && r.status === 'CONFIRMED'
+    );
+  }, [registrations, selectedEvent]);
 
-  const handleVerify = (tokenToVerify: string, method: 'qr' | 'manual' = 'qr', subType?: 'INVALID' | 'NOT_FOUND') => {
-    if (!tokenToVerify.trim()) return;
-    setIsScanning(true);
-    setLastResult(null);
+  // Attendance lookup map by registrationId and userId
+  const eventAttendanceMap = useMemo(() => {
+    const map = new Map<string, (typeof attendance)[number]>();
+    if (!selectedEvent) return map;
+    attendance
+      .filter(a => a.eventId === selectedEvent._id)
+      .forEach(a => {
+        if (a.registrationId) map.set(a.registrationId, a);
+        map.set(a.userId, a);
+      });
+    return map;
+  }, [attendance, selectedEvent]);
 
-    setTimeout(() => {
-      const res = verifyAndCheckIn(selectedEventId, tokenToVerify.trim(), method);
-      setLastResult(res);
-      setLastErrorSubType(subType || (tokenToVerify.includes('NOTFOUND') ? 'NOT_FOUND' : 'INVALID'));
-      setIsScanning(false);
-      setInputToken('');
-    }, 280);
-  };
+  // Compute roster statistics
+  const stats = useMemo(() => {
+    const totalRegistered = eventRegistrations.length;
+    let presentCount = 0;
+    eventRegistrations.forEach(reg => {
+      const att = eventAttendanceMap.get(reg._id) || eventAttendanceMap.get(reg.userId);
+      if (att && att.status !== 'ABSENT') {
+        presentCount += 1;
+      }
+    });
+    const absentCount = Math.max(0, totalRegistered - presentCount);
+    const attendancePercent =
+      totalRegistered > 0 ? Math.round((presentCount / totalRegistered) * 100) : 0;
 
-  const handleStartSession = () => {
-    if (!currentEvent) return;
-    const res = startAttendanceSession(currentEvent._id);
-    if (res.success) {
-      showToast('success', `Live attendance session started for "${currentEvent.title}".`, 'Session Active');
-    } else {
-      showToast('error', res.error?.message || 'Unable to start session.', 'Action Failed');
-    }
-  };
+    return {
+      totalRegistered,
+      presentCount,
+      absentCount,
+      attendancePercent,
+    };
+  }, [eventRegistrations, eventAttendanceMap]);
 
-  const handleCloseSession = () => {
-    if (!currentEvent) return;
-    const res = closeAttendanceSession(currentEvent._id);
+  // Filter roster by search (name, roll number, email) and status
+  const filteredRoster = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return eventRegistrations.filter(reg => {
+      const att = eventAttendanceMap.get(reg._id) || eventAttendanceMap.get(reg.userId);
+      const isPresent = Boolean(att && att.status !== 'ABSENT');
+
+      if (filterStatus === 'PRESENT' && !isPresent) return false;
+      if (filterStatus === 'ABSENT' && isPresent) return false;
+
+      if (!q) return true;
+      return (
+        reg.userName.toLowerCase().includes(q) ||
+        reg.userRollNumber.toLowerCase().includes(q) ||
+        reg.userEmail.toLowerCase().includes(q) ||
+        reg.userDepartment.toLowerCase().includes(q)
+      );
+    });
+  }, [eventRegistrations, eventAttendanceMap, searchQuery, filterStatus]);
+
+  const handleStartAttendance = () => {
+    if (!selectedEvent) return;
+    const res = startAttendanceSession(selectedEvent._id);
     if (res.success) {
       showToast(
         'success',
-        `Attendance session closed and participation threshold (${minPercent}%) evaluated.`,
-        'Session Finalized'
+        `Attendance session opened for "${selectedEvent.title}". You may now mark participants Present or Absent.`
       );
     } else {
-      showToast('error', res.error?.message || 'Unable to close session.', 'Action Failed');
+      showToast('error', res.error?.message || 'Could not start attendance session.');
     }
   };
 
-  const handleAddDuration = (attendanceId: string, currentMins: number, deltaMins: number) => {
-    if (!currentEvent) return;
-    const nextMins = Math.min(totalEventMins, Math.max(0, currentMins + deltaMins));
-    const res = updateParticipantParticipation(attendanceId, nextMins);
+  const handleMarkParticipant = (registrationId: string, status: 'PRESENT' | 'ABSENT', studentName: string) => {
+    if (!selectedEvent) return;
+    const res = markRosterAttendance(selectedEvent._id, registrationId, status);
     if (res.success) {
-      showToast('info', `Updated participation duration to ${nextMins}/${totalEventMins} mins.`, 'Duration Updated');
+      showToast(
+        status === 'PRESENT' ? 'success' : 'info',
+        `${studentName} marked ${status === 'PRESENT' ? 'Present' : 'Absent'}${
+          isFinalized && isAdmin ? ' (University Admin Override logged)' : ''
+        }.`
+      );
+    } else {
+      showToast('error', res.error?.message || 'Unable to update attendance.');
     }
   };
+
+  const handleMarkAllPresent = () => {
+    if (!selectedEvent) return;
+    const res = markAllRosterPresent(selectedEvent._id);
+    if (res.success) {
+      showToast('success', `All ${res.data} registered participants marked Present.`);
+    } else {
+      showToast('error', res.error?.message || 'Could not mark all present.');
+    }
+  };
+
+  const handleResetAttendance = () => {
+    if (!selectedEvent) return;
+    const res = resetRosterAttendance(selectedEvent._id);
+    if (res.success) {
+      showToast('info', 'Attendance selections reset to unmarked state.');
+    } else {
+      showToast('error', res.error?.message || 'Could not reset attendance.');
+    }
+  };
+
+  const handleConfirmFinalize = () => {
+    if (!selectedEvent) return;
+    const res = closeAttendanceSession(selectedEvent._id);
+    setShowFinalizeModal(false);
+    if (res.success) {
+      showToast(
+        'success',
+        `Attendance finalized for "${selectedEvent.title}". Normal organizer edits are now locked.`
+      );
+    } else {
+      showToast('error', res.error?.message || 'Failed to finalize attendance.');
+    }
+  };
+
+  const handleIssueCertificates = () => {
+    if (!selectedEvent) return;
+    const res = issueCertificatesForEvent(selectedEvent._id);
+    if (res.success) {
+      showToast('success', `Issued ${res.data} verified participation certificates!`);
+    } else {
+      showToast('warning', res.error?.message || 'Could not issue certificates.');
+    }
+  };
+
+  const handleExportAttendanceCsv = () => {
+    if (!selectedEvent) return;
+    const headers = [
+      'Student Name',
+      'Roll Number',
+      'Email',
+      'Department',
+      'Attendance Status',
+      'Verification Method',
+      'Participated Minutes',
+      'Participation %',
+      'Certificate Eligible',
+      'Timestamp',
+    ];
+    const rows = eventRegistrations.map(reg => {
+      const att = eventAttendanceMap.get(reg._id) || eventAttendanceMap.get(reg.userId);
+      const isPresent = Boolean(att && att.status !== 'ABSENT');
+      return [
+        `"${reg.userName}"`,
+        `"${reg.userRollNumber}"`,
+        `"${reg.userEmail}"`,
+        `"${reg.userDepartment}"`,
+        isPresent ? 'PRESENT' : 'ABSENT',
+        att?.method || (isPresent ? 'roster' : 'N/A'),
+        att?.participatedMinutes ?? (isPresent ? 180 : 0),
+        `${att?.participationPercent ?? (isPresent ? 100 : 0)}%`,
+        att?.eligibleForCertificate ? 'ELIGIBLE' : isPresent ? 'ELIGIBLE' : 'NOT_ELIGIBLE',
+        att?.checkedInAt ? new Date(att.checkedInAt).toLocaleString('en-IN') : 'Not Marked',
+      ];
+    });
+
+    const csvContent =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute(
+      'download',
+      `PARISAR_Attendance_${selectedEvent.title.replace(/\s+/g, '_')}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('success', 'Official attendance register exported as CSV.');
+  };
+
+  if (!selectedEvent) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 sm:px-8 py-12 text-center">
+        <p className="text-[#4E5A67]">No events available for attendance management.</p>
+      </div>
+    );
+  }
+
+  const finalizedByUser = selectedEvent.attendanceFinalizedBy
+    ? allUsers.find(u => u._id === selectedEvent.attendanceFinalizedBy)
+    : null;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-16">
-      {/* Editorial Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#B9B4AA] pb-4">
+    <div className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
+      {/* Header & Event Selector */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 mb-6 pb-5 border-b border-[#D8D0C2]">
         <div>
-          <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#B6533C] mb-1">
-            Entrance Control & Turnstile
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#2E6B4E]" />
+            <span className="text-xs font-mono uppercase tracking-widest text-[#B6533C] font-semibold">
+              {selectedEvent.eventMode === 'ONLINE'
+                ? 'Online Session Participation & Roster'
+                : 'Official Roster-Based Attendance Console'}
+            </span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
-            QR Attendance & Session Console
+          <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#18212B]">
+            Event Attendance Management
           </h1>
-          <p className="text-xs text-[#62605B] mt-0.5">
-            Validate attendee digital passes, manage live attendance sessions, and enforce minimum participation thresholds.
+          <p className="text-sm text-[#4E5A67] mt-1">
+            Mark and finalize participant attendance directly from the verified university registration roster.
           </p>
         </div>
 
-        {/* Target Event Selector - Tactile Inset Box */}
-        <div className="flex items-center gap-2 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] px-3 py-1.5 shadow-[2px_2px_0_0_#18212B]">
-          <span className="text-xs font-mono font-bold uppercase text-[#62605B]">Session:</span>
-          <select
-            value={selectedEventId}
-            onChange={e => {
-              setSelectedEventId(e.target.value);
-              setLastResult(null);
-            }}
-            className="text-xs font-bold text-[#18212B] bg-transparent focus:outline-none cursor-pointer max-w-[240px] truncate"
-          >
-            {events
-              .filter(e => e.status !== 'DRAFT')
-              .map(e => (
-                <option key={e._id} value={e._id}>
-                  {e.title} ({e.venue})
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-[260px]">
+            <label className="block text-[11px] font-mono uppercase tracking-wider text-[#7A8591] mb-1">
+              Select Event
+            </label>
+            <select
+              aria-label="Select Event for Attendance"
+              value={selectedEvent._id}
+              onChange={e => setSelectedEventId(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-lg bg-[#FCFAF5] border border-[#D8D0C2] text-sm font-medium text-[#18212B] focus:outline-none focus:border-[#18212B]"
+            >
+              {organizerEvents.map(evt => (
+                <option key={evt._id} value={evt._id}>
+                  {evt.title} ({evt.eventMode || 'OFFLINE'})
                 </option>
               ))}
-          </select>
+            </select>
+          </div>
+          {onNavigateToParticipants && (
+            <div className="pt-5">
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => onNavigateToParticipants(selectedEvent._id)}
+              >
+                <SlidersHorizontal className="w-4 h-4" /> Full Participant Ledger
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Live Attendance Session Lifecycle Banner */}
-      {currentEvent && (
-        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-4 shadow-[2px_2px_0_0_#18212B] flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2 py-0.5 rounded-[2px] bg-[#18212B] text-[#FCFAF5] text-[10px] font-mono font-bold uppercase">
-                Mode: {currentEvent.eventMode || 'OFFLINE'}
+      {/* Selected Event Banner & Session Status */}
+      <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl p-5 mb-6 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <div className="flex flex-wrap items-center gap-2.5 mb-2">
+              <h2 className="text-xl font-serif font-bold text-[#18212B]">
+                {selectedEvent.title}
+              </h2>
+              {isFinalized ? (
+                <Badge variant="neutral">
+                  <Lock className="w-3 h-3 mr-1 inline" /> Attendance Finalized
+                </Badge>
+              ) : isOpen ? (
+                <Badge variant="success">Attendance Open</Badge>
+              ) : (
+                <Badge variant="warning">Attendance Not Started</Badge>
+              )}
+              <Badge variant={selectedEvent.eventMode === 'ONLINE' ? 'info' : 'neutral'}>
+                {selectedEvent.eventMode || 'OFFLINE'} EVENT
+              </Badge>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-xs text-[#4E5A67]">
+              <span className="inline-flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-[#B6533C]" />
+                {new Date(selectedEvent.startTime).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
               </span>
-              <span
-                className={`px-2 py-0.5 rounded-[2px] text-[10px] font-mono font-bold uppercase border ${
-                  currentEvent.attendanceSessionStatus === 'ACTIVE'
-                    ? 'bg-[#EBF3ED] text-[#2F613B] border-[#2F613B]/40'
-                    : currentEvent.attendanceSessionStatus === 'CLOSED'
-                    ? 'bg-[#EAE5DB] text-[#18212B] border-[#B9B4AA]'
-                    : 'bg-[#FAF0E6] text-[#B08A4A] border-[#B08A4A]/40'
-                }`}
-              >
-                Session: {currentEvent.attendanceSessionStatus || 'NOT_STARTED'}
+              <span className="inline-flex items-center gap-1.5">
+                {selectedEvent.eventMode === 'ONLINE' ? (
+                  <Globe className="w-3.5 h-3.5 text-[#365B6D]" />
+                ) : (
+                  <MapPin className="w-3.5 h-3.5 text-[#2E6B4E]" />
+                )}
+                {selectedEvent.venue}
               </span>
-              <span className="text-[11px] font-mono text-[#62605B]">
-                <Clock className="w-3 h-3 inline mr-1 text-[#B6533C]" />
-                Duration: <strong>{totalEventMins} mins</strong> • Min Certificate Threshold: <strong>{minPercent}% ({requiredMins} mins)</strong>
+              <span className="inline-flex items-center gap-1.5 font-mono">
+                <Clock className="w-3.5 h-3.5 text-[#B08A4A]" />
+                Min Threshold: {selectedEvent.minParticipationPercent ?? 80}%
               </span>
             </div>
-            <p className="text-xs text-[#62605B]">
-              Registration alone does not grant attendance or certificates. Students must be scanned or validate live participation ≥ {minPercent}%.
-            </p>
+
+            {isFinalized && (
+              <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#EAE3D5] border border-[#D8D0C2] text-xs text-[#18212B]">
+                <Lock className="w-3.5 h-3.5 text-[#B6533C] shrink-0" />
+                <span>
+                  Finalized on{' '}
+                  <strong>
+                    {selectedEvent.attendanceFinalizedAt || selectedEvent.attendanceClosedAt
+                      ? new Date(
+                          (selectedEvent.attendanceFinalizedAt ||
+                            selectedEvent.attendanceClosedAt)!
+                        ).toLocaleString('en-IN')
+                      : 'Record Locked'}
+                  </strong>
+                  {finalizedByUser ? ` by ${finalizedByUser.name}` : ''}.{' '}
+                  {isAdmin
+                    ? 'As University Administrator, your overrides are recorded in the Audit Log.'
+                    : 'Normal organizer edits are locked.'}
+                </span>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {currentEvent.attendanceSessionStatus !== 'ACTIVE' && currentEvent.status !== 'COMPLETED' && (
-              <Button
-                variant="primary"
-                size="sm"
-                leftIcon={<Play className="w-3.5 h-3.5" />}
-                onClick={handleStartSession}
-              >
-                Start Attendance Session
+          {/* Primary Session & Bulk Controls */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            {!isOpen && !isFinalized && (
+              <Button variant="primary" size="md" onClick={handleStartAttendance}>
+                <Play className="w-4 h-4" /> Start Attendance
               </Button>
             )}
-            {currentEvent.attendanceSessionStatus === 'ACTIVE' && (
+
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={isLockedForCurrentUser || eventRegistrations.length === 0}
+              onClick={handleMarkAllPresent}
+            >
+              <UserCheck className="w-4 h-4" /> Mark All Present
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isLockedForCurrentUser || stats.presentCount === 0}
+              onClick={handleResetAttendance}
+            >
+              <RotateCcw className="w-4 h-4" /> Reset / Undo
+            </Button>
+
+            {!isFinalized && (
               <Button
-                variant="brass"
+                variant="destructive"
                 size="sm"
-                leftIcon={<Square className="w-3.5 h-3.5" />}
-                onClick={handleCloseSession}
+                onClick={() => setShowFinalizeModal(true)}
               >
-                Close Session & Finalize
+                <Lock className="w-4 h-4" /> Close Attendance
               </Button>
             )}
+
+            <Button variant="outline" size="sm" onClick={handleIssueCertificates}>
+              <Award className="w-4 h-4" /> Issue Certificates
+            </Button>
+
+            <Button variant="outline" size="sm" onClick={handleExportAttendanceCsv}>
+              <Download className="w-4 h-4" /> Export CSV
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* 4 Live Summary Cards: Registered, Present, Absent, Attendance % */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs font-mono uppercase text-[#7A8591] mb-1">
+            <span>Registered</span>
+            <Users className="w-4 h-4 text-[#18212B]" />
+          </div>
+          <p className="text-2xl font-serif font-bold text-[#18212B]">
+            {stats.totalRegistered}
+          </p>
+          <p className="text-[11px] text-[#7A8591] mt-0.5">Confirmed Roster</p>
+        </div>
+
+        <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs font-mono uppercase text-[#2E6B4E] mb-1">
+            <span>Present</span>
+            <UserCheck className="w-4 h-4 text-[#2E6B4E]" />
+          </div>
+          <p className="text-2xl font-serif font-bold text-[#2E6B4E]">
+            {stats.presentCount}
+          </p>
+          <p className="text-[11px] text-[#7A8591] mt-0.5">Verified Attendees</p>
+        </div>
+
+        <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs font-mono uppercase text-[#B93829] mb-1">
+            <span>Absent</span>
+            <UserX className="w-4 h-4 text-[#B93829]" />
+          </div>
+          <p className="text-2xl font-serif font-bold text-[#B93829]">
+            {stats.absentCount}
+          </p>
+          <p className="text-[11px] text-[#7A8591] mt-0.5">Unmarked / Absent</p>
+        </div>
+
+        <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl p-4">
+          <div className="flex items-center justify-between text-xs font-mono uppercase text-[#B08A4A] mb-1">
+            <span>Attendance %</span>
+            <Percent className="w-4 h-4 text-[#B08A4A]" />
+          </div>
+          <p className="text-2xl font-serif font-bold text-[#18212B]">
+            {stats.attendancePercent}%
+          </p>
+          <p className="text-[11px] text-[#7A8591] mt-0.5">Turnout Ratio</p>
+        </div>
+      </div>
+
+      {/* Search & Status Filter Bar */}
+      <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl p-4 mb-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-[#7A8591] absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Search by name, roll number, or email..."
+            className="w-full pl-10 pr-4 py-2 rounded-lg bg-[#F4F0E8] border border-[#D8D0C2] text-sm text-[#18212B] placeholder-[#7A8591] focus:outline-none focus:border-[#18212B]"
+          />
+        </div>
+
+        <div className="flex items-center gap-1.5 bg-[#EAE3D5] p-1 rounded-lg">
+          {(['ALL', 'PRESENT', 'ABSENT'] as const).map(st => (
+            <button
+              key={st}
+              type="button"
+              onClick={() => setFilterStatus(st)}
+              className={`px-3 py-1.5 rounded-md text-xs font-mono font-semibold transition-all ${
+                filterStatus === st
+                  ? 'bg-[#18212B] text-[#FCFAF5] shadow-xs'
+                  : 'text-[#4E5A67] hover:text-[#18212B]'
+              }`}
+            >
+              {st === 'ALL'
+                ? `All (${stats.totalRegistered})`
+                : st === 'PRESENT'
+                ? `Present (${stats.presentCount})`
+                : `Absent (${stats.absentCount})`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Participant Roster Table / List */}
+      <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl overflow-hidden shadow-sm">
+        <div className="px-5 py-3.5 bg-[#EAE3D5]/60 border-b border-[#D8D0C2] flex items-center justify-between">
+          <span className="text-xs font-mono uppercase tracking-wider font-semibold text-[#18212B]">
+            Registered Students List ({filteredRoster.length})
+          </span>
+          {selectedEvent.eventMode !== 'OFFLINE' && (
+            <span className="text-xs font-mono text-[#365B6D]">
+              Online Session Auto-Threshold: {selectedEvent.minParticipationPercent ?? 80}% Duration
+            </span>
+          )}
+        </div>
+
+        {filteredRoster.length === 0 ? (
+          <div className="p-12 text-center">
+            <Users className="w-10 h-10 text-[#7A8591] mx-auto mb-2 opacity-60" />
+            <p className="text-sm font-medium text-[#18212B]">
+              No matching students found in the registration roster
+            </p>
+            <p className="text-xs text-[#7A8591] mt-1">
+              Try clearing your search query or switching the status filter.
+            </p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#D8D0C2]">
+            {filteredRoster.map(reg => {
+              const att =
+                eventAttendanceMap.get(reg._id) || eventAttendanceMap.get(reg.userId);
+              const isPresent = Boolean(att && att.status !== 'ABSENT');
+              const studentObj = allUsers.find(u => u._id === reg.userId);
+              const partPct = att?.participationPercent ?? (isPresent ? 100 : 0);
+              const partMins = att?.participatedMinutes ?? 0;
+              const reqMins = att?.requiredMinutes ?? 144;
+              const isEligible =
+                att?.eligibleForCertificate ??
+                (isPresent && partPct >= (selectedEvent.minParticipationPercent ?? 80));
+
+              return (
+                <div
+                  key={reg._id}
+                  className={`p-4 sm:px-6 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${
+                    isPresent ? 'bg-[#2E6B4E]/[0.04]' : 'hover:bg-[#F4F0E8]/60'
+                  }`}
+                >
+                  <div className="flex items-start sm:items-center gap-3.5">
+                    <UserAvatar
+                      name={reg.userName}
+                      profileImage={studentObj?.profileImage}
+                      size="md"
+                    />
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-[#18212B] text-sm">
+                          {reg.userName}
+                        </span>
+                        <span className="text-xs font-mono px-2 py-0.5 rounded bg-[#EAE3D5] text-[#18212B] font-medium">
+                          {reg.userRollNumber}
+                        </span>
+                        {isPresent ? (
+                          <Badge variant="success">PRESENT</Badge>
+                        ) : (
+                          <Badge variant="neutral">ABSENT</Badge>
+                        )}
+                        {att?.method === 'admin_override' && (
+                          <Badge variant="warning">ADMIN OVERRIDE</Badge>
+                        )}
+                        {att?.method === 'online_session' && (
+                          <Badge variant="info">ONLINE SESSION</Badge>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-[#4E5A67] mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span>{reg.userDepartment}</span>
+                        <span>•</span>
+                        <span className="font-mono">{reg.userEmail}</span>
+                        {att?.checkedInAt && isPresent && (
+                          <>
+                            <span>•</span>
+                            <span className="text-[#2E6B4E] font-mono">
+                              Marked at{' '}
+                              {new Date(att.checkedInAt).toLocaleTimeString('en-IN', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Online / Hybrid Session Duration Telemetry */}
+                      {selectedEvent.eventMode !== 'OFFLINE' && att && isPresent && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-mono">
+                          <span className="px-2 py-0.5 rounded bg-[#F4F0E8] border border-[#D8D0C2] text-[#18212B]">
+                            Verified Duration: {partMins} mins (Required: {reqMins} mins)
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 rounded font-semibold ${
+                              isEligible
+                                ? 'bg-[#2E6B4E]/15 text-[#2E6B4E]'
+                                : 'bg-[#B93829]/15 text-[#B93829]'
+                            }`}
+                          >
+                            {partPct}% —{' '}
+                            {isEligible ? 'CERTIFICATE ELIGIBLE' : 'BELOW THRESHOLD'}
+                          </span>
+                          {!isLockedForCurrentUser && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateParticipantParticipation(
+                                  att._id,
+                                  (att.participatedMinutes || 60) + 45
+                                )
+                              }
+                              className="px-2 py-0.5 rounded bg-[#18212B] text-[#FCFAF5] hover:bg-[#2E6B4E] transition-colors"
+                            >
+                              +45m Verified Duration
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Direct Present / Absent Action Buttons */}
+                  <div className="flex items-center gap-2 self-end md:self-center shrink-0">
+                    <button
+                      type="button"
+                      disabled={isLockedForCurrentUser}
+                      onClick={() =>
+                        handleMarkParticipant(reg._id, 'PRESENT', reg.userName)
+                      }
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+                        isPresent
+                          ? 'bg-[#2E6B4E] text-white shadow-xs'
+                          : 'bg-[#F4F0E8] text-[#18212B] border border-[#D8D0C2] hover:border-[#2E6B4E] hover:text-[#2E6B4E]'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      Present
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isLockedForCurrentUser}
+                      onClick={() =>
+                        handleMarkParticipant(reg._id, 'ABSENT', reg.userName)
+                      }
+                      className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
+                        !isPresent
+                          ? 'bg-[#B93829] text-white shadow-xs'
+                          : 'bg-[#F4F0E8] text-[#4E5A67] border border-[#D8D0C2] hover:border-[#B93829] hover:text-[#B93829]'
+                      }`}
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      Absent
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Finalize Attendance Confirmation Modal (Section 4) */}
+      {showFinalizeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#18212B]/60 backdrop-blur-xs">
+          <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl max-w-md w-full p-6 shadow-xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-full bg-[#B6533C]/15 flex items-center justify-center text-[#B6533C]">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-serif font-bold text-[#18212B]">
+                  Finalize Event Attendance?
+                </h3>
+                <p className="text-xs font-mono text-[#7A8591]">
+                  {selectedEvent.title}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3.5 rounded-lg bg-[#EAE3D5]/70 border border-[#D8D0C2] text-xs text-[#18212B] leading-relaxed mb-4">
+              <strong>
+                Attendance will be finalized for this event. Normal organizer edits will no longer be allowed.
+              </strong>
+              <p className="mt-1.5 text-[#4E5A67]">
+                Present: <strong>{stats.presentCount}</strong> | Absent:{' '}
+                <strong>{stats.absentCount}</strong> ({stats.attendancePercent}% turnout).
+                After finalization, only University Administration can perform an audited override.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFinalizeModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button variant="destructive" size="sm" onClick={handleConfirmFinalize}>
+                <Lock className="w-3.5 h-3.5" /> Finalize & Lock Attendance
+              </Button>
+            </div>
           </div>
         </div>
       )}
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Scanner Viewport & Camera Bezel - 7 Cols */}
-        <div className="lg:col-span-7 space-y-4">
-          <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Camera className="w-4 h-4 text-[#B6533C]" />
-                <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#18212B]">
-                  Optical Scanner Feed
-                </span>
-              </div>
-              {isScanning ? (
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[2px] bg-[#FAF0E6] text-[#B08A4A] border border-[#B08A4A]/40 flex items-center gap-1">
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                  Scanning Pass...
-                </span>
-              ) : (
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[2px] bg-[#EBF3ED] text-[#2F613B] border border-[#2F613B]/30">
-                  Ready for Pass
-                </span>
-              )}
-            </div>
-
-            {/* Viewfinder Canvas - Precision Academic Hardware Bezel */}
-            <div className="relative w-full h-64 bg-[#18212B] rounded-[3px] overflow-hidden flex flex-col items-center justify-center p-4 border-2 border-[#18212B] shadow-[inset_0_3px_8px_rgba(0,0,0,0.7)]">
-              {/* Target Scan Reticle */}
-              <div className="relative w-44 h-44 border-2 border-[#64788A]/60 rounded-[2px] flex items-center justify-center">
-                {/* Corner Marks */}
-                <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-[#B6533C]"></div>
-                <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-[#B6533C]"></div>
-                <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-[#B6533C]"></div>
-                <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-[#B6533C]"></div>
-
-                {/* Precision Alignment Crosshair */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-40">
-                  <div className="w-8 h-[1px] bg-[#FCFAF5]"></div>
-                  <div className="h-8 w-[1px] bg-[#FCFAF5]"></div>
-                </div>
-
-                {/* Animated Terracotta Scan Line */}
-                <div className="w-full h-0.5 bg-[#B6533C] shadow-[0_0_8px_#B6533C] animate-bounce"></div>
-              </div>
-
-              <div className="text-[11px] text-[#EAE5DB] font-mono mt-3">
-                {isScanning ? 'Verifying cryptographic token against event roster...' : 'Align student QR pass inside optical reticle'}
-              </div>
-            </div>
-
-            {/* Manual Token Entry Form */}
-            <div className="space-y-2 pt-2 border-t border-[#B9B4AA]">
-              <label className="text-xs font-bold text-[#18212B] block">
-                Manual Pass Token Entry
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  placeholder="e.g. PARISAR-PASS-DL-CS042"
-                  value={inputToken}
-                  onChange={e => setInputToken(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') handleVerify(inputToken, 'manual');
-                  }}
-                  className="flex-1 px-3 py-2 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-mono font-bold text-[#18212B] placeholder-[#62605B] shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] focus:outline-none focus:border-[#18212B]"
-                />
-                <Button
-                  variant="primary"
-                  size="sm"
-                  disabled={isScanning}
-                  onClick={() => handleVerify(inputToken, 'manual')}
-                >
-                  Verify Token
-                </Button>
-              </div>
-            </div>
-
-            {/* Quick Verification Test Triggers (Section 23.7: Valid, Already Checked In, Wrong Event, Registration Not Found, Invalid) */}
-            <div className="bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] p-3.5 space-y-2.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)]">
-              <div className="text-xs font-mono font-bold text-[#18212B] flex items-center justify-between">
-                <span>Turnstile Verification Test Passes</span>
-                <span className="text-[10px] text-[#62605B] font-normal">Click to verify pass states:</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                <button
-                  onClick={() => handleVerify('PARISAR-PASS-DL-CS042', 'qr')}
-                  className="p-2 text-left bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] shadow-[1px_1px_0_0_#18212B] hover:border-[#2F613B] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
-                >
-                  <div className="font-bold text-[#2F613B] text-[11px]">1. Valid Pass</div>
-                  <div className="text-[10px] text-[#62605B] font-mono truncate">Amit Sharma (Y23141042)</div>
-                </button>
-
-                <button
-                  onClick={() => handleVerify('PARISAR-PASS-DL-CS088', 'qr')}
-                  className="p-2 text-left bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] shadow-[1px_1px_0_0_#18212B] hover:border-[#B08A4A] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
-                >
-                  <div className="font-bold text-[#B08A4A] text-[11px]">2. Already Checked In</div>
-                  <div className="text-[10px] text-[#62605B] font-mono truncate">Rohan Mehra (Duplicate Scan)</div>
-                </button>
-
-                <button
-                  onClick={() => handleVerify('PARISAR-PASS-UT-EC118', 'qr')}
-                  className="p-2 text-left bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] shadow-[1px_1px_0_0_#18212B] hover:border-[#B6533C] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
-                >
-                  <div className="font-bold text-[#B6533C] text-[11px]">3. Wrong Event</div>
-                  <div className="text-[10px] text-[#62605B] font-mono truncate">Pass for Abhivyakti Youth Fest</div>
-                </button>
-
-                <button
-                  onClick={() => handleVerify('PARISAR-NOTFOUND-000', 'qr', 'NOT_FOUND')}
-                  className="p-2 text-left bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] shadow-[1px_1px_0_0_#18212B] hover:border-[#A83226] active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all cursor-pointer"
-                >
-                  <div className="font-bold text-[#A83226] text-[11px]">4. Registration Not Found / Invalid</div>
-                  <div className="text-[10px] text-[#62605B] font-mono truncate">Unregistered or Invalid QR</div>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Live Feedback & Verification Results - 5 Cols */}
-        <div className="lg:col-span-5 space-y-4">
-          {/* Verification Result Banner - Tactile Solid Panel */}
-          <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] space-y-3">
-            <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-[#18212B]">
-              Scanner Output & Decision
-            </h3>
-
-            {isScanning ? (
-              <div className="p-6 bg-[#FAF0E6] border-2 border-[#B08A4A] rounded-[3px] text-center space-y-2">
-                <Loader2 className="w-6 h-6 text-[#B08A4A] animate-spin mx-auto" />
-                <div className="text-xs font-extrabold uppercase tracking-wider text-[#B08A4A]">
-                  SCANNING & VERIFYING PASS...
-                </div>
-                <p className="text-[11px] font-mono text-[#62605B]">
-                  Checking DHSGSU Event Roster & Attendance Ledger
-                </p>
-              </div>
-            ) : lastResult ? (
-              <div
-                className={`p-4 rounded-[3px] border-2 text-xs space-y-2.5 shadow-[2px_2px_0_0_#18212B] ${
-                  lastResult.status === 'SUCCESS'
-                    ? 'bg-[#EBF3ED] border-[#2F613B] text-[#2F613B]'
-                    : lastResult.status === 'DUPLICATE'
-                    ? 'bg-[#FAF0E6] border-[#B08A4A] text-[#B08A4A]'
-                    : lastResult.status === 'WRONG_EVENT'
-                    ? 'bg-[#FBEFEF] border-[#B6533C] text-[#B6533C]'
-                    : 'bg-[#FBEAEA] border-[#A83226] text-[#A83226]'
-                }`}
-              >
-                <div className="flex items-center gap-2 font-extrabold text-sm tracking-tight">
-                  {lastResult.status === 'SUCCESS' && <CheckCircle2 className="w-5 h-5 shrink-0" />}
-                  {lastResult.status === 'DUPLICATE' && <AlertTriangle className="w-5 h-5 shrink-0" />}
-                  {lastResult.status === 'WRONG_EVENT' && <AlertOctagon className="w-5 h-5 shrink-0" />}
-                  {lastResult.status === 'INVALID' && <XCircle className="w-5 h-5 shrink-0" />}
-
-                  <span>
-                    {lastResult.status === 'SUCCESS' && 'VALID — ATTENDANCE CONFIRMED'}
-                    {lastResult.status === 'DUPLICATE' && 'ALREADY CHECKED IN'}
-                    {lastResult.status === 'WRONG_EVENT' && 'WRONG EVENT PASS'}
-                    {lastResult.status === 'INVALID' && (
-                      lastErrorSubType === 'NOT_FOUND'
-                        ? 'REGISTRATION NOT FOUND'
-                        : 'INVALID PASS TOKEN'
-                    )}
-                  </span>
-                </div>
-
-                <p className="leading-relaxed font-bold text-[#18212B]">
-                  {lastResult.message}
-                </p>
-
-                {'attendee' in lastResult && lastResult.attendee && (
-                  <div className="pt-2 border-t border-current/20 space-y-1 text-[#18212B] font-mono text-[11px]">
-                    <div>Attendee: <strong>{lastResult.attendee.name}</strong></div>
-                    <div>Roll: <strong>{lastResult.attendee.rollNumber}</strong></div>
-                    <div>Department: {lastResult.attendee.department}</div>
-                    {'checkedInAt' in lastResult && lastResult.checkedInAt && (
-                      <div className="text-[#B08A4A] font-bold mt-1">
-                        First scanned: {new Date(lastResult.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-6 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-center text-xs text-[#62605B] font-mono">
-                Scanner idle. Ready for attendee QR pass.
-              </div>
-            )}
-          </div>
-
-          {/* Session Attendance & Participation Duration Summary */}
-          <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-5 shadow-[2px_2px_0_0_#18212B] space-y-3">
-            <div className="flex items-center justify-between border-b border-[#B9B4AA] pb-2">
-              <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-[#18212B] flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5 text-[#B6533C]" />
-                <span>Verified Present ({currentEventAttendance.length})</span>
-              </h4>
-              {onNavigateToParticipants && (
-                <button
-                  onClick={() => onNavigateToParticipants(selectedEventId)}
-                  className="text-xs font-bold text-[#B6533C] hover:underline cursor-pointer"
-                >
-                  Full Roster →
-                </button>
-              )}
-            </div>
-
-            <div className="space-y-2.5 max-h-72 overflow-y-auto">
-              {currentEventAttendance.length > 0 ? (
-                currentEventAttendance.map(att => {
-                  const pMins = att.participatedMinutes ?? totalEventMins;
-                  const pPct = att.participationPercent ?? Math.round((pMins / totalEventMins) * 100);
-                  const isEligible = att.eligibleForCertificate ?? pPct >= minPercent;
-
-                  return (
-                    <div
-                      key={att._id}
-                      className="p-2.5 bg-[#EAE5DB]/60 border border-[#B9B4AA] rounded-[2px] text-xs space-y-2"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <div className="font-bold text-[#18212B]">{att.userName}</div>
-                          <div className="text-[11px] text-[#62605B] font-mono">
-                            {att.userRollNumber} • {att.userDepartment}
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-[10px] font-mono text-[#2F613B] font-bold bg-[#EBF3ED] px-2 py-0.5 rounded-[2px] border border-[#2F613B]/30">
-                            {new Date(att.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between pt-1.5 border-t border-[#B9B4AA]/60 text-[10px] font-mono">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-[#18212B]">
-                            {pMins}/{totalEventMins}m ({pPct}%)
-                          </span>
-                          <span
-                            className={`px-1.5 py-0.5 rounded-[2px] font-bold ${
-                              isEligible
-                                ? 'bg-[#EBF3ED] text-[#2F613B] border border-[#2F613B]/30'
-                                : 'bg-[#FAF0E6] text-[#B08A4A] border border-[#B08A4A]/40'
-                            }`}
-                          >
-                            {isEligible ? `Eligible ≥${minPercent}%` : `Below ${minPercent}%`}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleAddDuration(att._id, pMins, 15)}
-                            className="px-1.5 py-0.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] font-bold text-[#18212B] hover:border-[#18212B] cursor-pointer"
-                          >
-                            +15m
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleAddDuration(att._id, pMins, totalEventMins)}
-                            className="px-1.5 py-0.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[2px] font-bold text-[#2F613B] hover:border-[#2F613B] cursor-pointer"
-                          >
-                            100%
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="p-4 text-center text-xs text-[#62605B] font-mono">
-                  No participants checked in for this session yet.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
-

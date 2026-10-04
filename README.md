@@ -8,89 +8,72 @@
 
 ---
 
-## 📱 Official Android Application Release (APK — v2.0.0)
+## 📱 Official Android Application & Web Platform (v3.0.0)
 
-The official **PARISAR Android Application (v2.0.0)** with Role-Based Authentication (`Student`, `Verified Organizer`, `University Administrator`) is available for direct installation:
+The **PARISAR Platform (v3.0.0)** provides a unified Web Application and Android Mobile Application connected to a shared REST API backend (`/api/v1/*`) with role-based workflows for **Students**, **Verified Organizers**, and **University Administrators**:
 
 [![Download APK Release](https://img.shields.io/badge/Download_APK-v2.0.0_Latest_Release-B6533C?style=for-the-badge&logo=android&logoColor=white)](https://github.com/itsxmit1503/Parisar/releases/latest/download/parisar-v2.0.0-release.apk)
 [![GitHub Release](https://img.shields.io/github/v/release/itsxmit1503/Parisar?style=for-the-badge&color=2F613B&label=Latest%20Release)](https://github.com/itsxmit1503/Parisar/releases/latest)
 
-- 📥 **Direct Download Link (`4.6 MB`)**: [**`parisar-v2.0.0-release.apk` (Latest Release Asset)**](https://github.com/itsxmit1503/Parisar/releases/latest/download/parisar-v2.0.0-release.apk)
-- 📦 **GitHub Releases Page**: [**View Latest Release & Assets (`v2.0.0`)**](https://github.com/itsxmit1503/Parisar/releases/latest)
-- 🗂️ **Repository File Mirror**: [`release/parisar-v2.0.0-release.apk`](./release/parisar-v2.0.0-release.apk)
+- 📥 **Direct Download Link**: [**`parisar-v2.0.0-release.apk` (Latest Release Asset)**](https://github.com/itsxmit1503/Parisar/releases/latest/download/parisar-v2.0.0-release.apk)
+- 🗂️ **Repository APK Mirror**: [`release/parisar-v2.0.0-release.apk`](./release/parisar-v2.0.0-release.apk)
 - 📱 **Compatibility**: Android 8.0+ (Oreo, Pie, Android 10–15)
-- 🏗️ **Platform Strategy**: Dual Clients (Web Portal + Native Android App), Single Centralized DHSGSU API Backend (`/api/v1`)
-
-### How to Install on Android:
-1. Tap the [**Direct Download APK (`parisar-v2.0.0-release.apk`) link**](https://github.com/itsxmit1503/Parisar/releases/latest/download/parisar-v2.0.0-release.apk) on your smartphone.
-2. When the download completes, tap **Open**.
-3. If prompted by Android, enable **"Allow installation from this source"**.
-4. Tap **Install** and launch **PARISAR**.
+- 🏗️ **Platform Strategy**: Dual Clients (Next.js Web Portal + Android App), Shared Centralized DHSGSU API Backend (`/api/v1/*`) with MongoDB + In-Memory Store Persistence
 
 ---
 
-## 🏛️ About the Platform & Role-Based Architecture (v2.0.0)
+## 🏛️ Three-Panel Role Architecture
 
-**PARISAR** (परिसर — campus, premises, university environment) is the dedicated digital campus event platform for **Dr. Harisingh Gour Vishwavidyalaya (DHSGSU), Sagar (M.P.)**. It operates across **strictly three separated roles**:
+**PARISAR** (परिसर — campus, premises, university environment) operates across **three strictly separated roles**:
 
 1. **STUDENT (`/student`)**:
-   - Discover official approved Seminars, Workshops, Cultural Events, and Competitions across DHSGSU.
-   - Register for events, receive cryptographic QR Digital Event Passes (`PARISAR-PASS-...`), track attendance status, and build an Academic Participation Passport.
+   - Discover approved Seminars, Workshops, Cultural Events, and Sports meets across DHSGSU.
+   - Register with one click and receive a clean **Digital Registration Card** displaying Student Name, Roll Number, Event Details, Venue, Organizer, and Registration ID.
+   - Join **Online / Hybrid Events** directly via `[ JOIN EVENT ]` with automatic session duration tracking toward certificate eligibility (`≥ 80%` required duration).
+   - Customize their **Student Profile** (upload/crop profile photo with HTML5 Canvas or use the deterministic initials avatar `AS`, manage 5 structured settings tabs: `PROFILE`, `ACCOUNT`, `PREFERENCES`, `PRIVACY`, `SUPPORT`).
+   - Download verified **DHSGSU Certificates** (`DHSGSU-YYYY-XXXXXX`) and track cumulative participation in the **Event Passport**.
+
 2. **ORGANIZER (`/organizer`)**:
-   - **Mandatory Verification Workflow**: Applying for an Organizer account creates a **Pending University Verification** request (`organizerStatus: 'PENDING'`). Organizers cannot create or publish events until verified by the University Administrator.
-   - Once verified (`organizerStatus: 'VERIFIED'`), organizers can submit event proposals (`PENDING_REVIEW`), manage registered participants, export rosters, and operate the optical QR Attendance Scanner.
-3. **UNIVERSITY ADMINISTRATOR (`/admin`)**:
-   - Controlled administrative access (`Office of the Dean of Students' Welfare — DSW`).
-   - Review and **Approve / Reject** Organizer Verification Requests.
-   - Review and **Approve / Reject** submitted Event Proposals before they become visible to students.
-   - Oversee university-wide participant directories, overall attendance ledgers, and campus venues.
+   - **Mandatory Verification Workflow**: Applying for an Organizer account creates a **Pending University Verification** request (`organizerStatus: 'PENDING'`). Organizers cannot create or publish events until approved by the University Administrator.
+   - **Roster-Based Offline Attendance Console**: Open an event → click `Start Attendance` (`OPEN`) → search registered students by Name, Roll Number, or Email → mark `Present` / `Absent` (or `Mark All Present` / `Reset`) → click `Close Attendance` to **Finalize & Lock** attendance (`FINALIZED`).
+   - Manage participant rosters, export CSV reports, send targeted event announcements, and issue batch certificates.
+
+3. **UNIVERSITY ADMINISTRATOR (`/admin` & `/admin/login`)**:
+   - **Controlled Administrative Access**: Accessible via `/admin/login` (**PARISAR — University Administration**) or the subtle `"University Administration"` link in the footer. Public users cannot sign up as administrators.
+   - Review and **Approve / Reject** Organizer Verification Requests (`/admin/organizers`).
+   - Review and **Approve / Reject** submitted Event Proposals (`/admin/events`).
+   - Perform **Audited Attendance Overrides** (`/admin/attendance`) on finalized events, recording immutable `ATTENDANCE_ADMIN_OVERRIDE` logs in `/admin/audit`.
+   - Manage the University User Directory (`/admin/users`), Certificates (`/admin/certificates`), and verified DHSGSU Campus Venues (`/admin/venues`).
 
 ---
 
-## 🎨 Visual Identity: Modern Neo-Skeuomorphic Editorial UI
+## 📍 Verified DHSGSU Campus Map (Google Maps JS API)
 
-PARISAR features a distinct, modern neo-skeuomorphic editorial visual design:
-
-- **Institutional Academic Palette**:
-  - Warm Ivory Stone Canvas: `#F4F0E8`
-  - Solid Off-White Cards: `#FCFAF5`
-  - Recessed Inset Wells: `#EAE5DB`
-  - High-Contrast Navy/Charcoal Text: `#18212B`
-  - Terracotta Primary CTAs: `#B6533C`
-  - Muted Brass Credentials: `#B08A4A`
-  - Academic Sage Verified Checks: `#2F613B`
-- **Tactile Physical Presence**:
-  - Crisp, sharp geometry (`0px`–`4px` border radius)
-  - Directional offset shadows (`shadow-[2px_2px_0_0_#18212B]`)
-  - Physical depression feedback on button clicks (`active:translate-x-[1px] active:translate-y-[1px]`)
-  - **Zero Glassmorphism** (no blurry frosted panels, no fake translucent cards)
+Centered on **Dr. Harisingh Gour Vishwavidyalaya, Patharia Hills, Sagar (`23.8256, 78.7735`)** with verified campus coordinates:
+- **Swarna Jayanti Auditorium (Golden Jubilee Hall)** — `23.82612, 78.77284`
+- **Department of Computer Science & Applications (DCSA)** — `23.82485, 78.77412`
+- **Abdul Gani Khan Stadium (University Sports Ground, Tili Road)** — `23.8294032, 78.7755979`
+- **Gour Bhavan (Administrative Block)** — `23.82590, 78.77360`
+- **Jawaharlal Nehru Central Library** — `23.82530, 78.77295`
+- **Rabindranath Tagore Open Air Theatre (Abhimanch)** — `23.82645, 78.77450`
 
 ---
 
-## 📍 Authentic DHSGSU Campus Venues (Patharia Hills)
+## 🔐 Evaluator & Demo Credentials
 
-- **Swarna Jayanti Auditorium (Golden Jubilee Hall)**: 500-seat flagship university auditorium
-- **Turing Advanced Computing Lab (DCSA)**: 60-seat dual-display laboratory
-- **Prof. C.V. Raman Science Lecture Theatre**: 180-seat tiered science theatre
-- **Gour Bhavan Senate & Conference Hall**: 120-seat executive chamber
-- **DHSGSU Sports Complex & Stadium**: 1,200-seat stadium with synthetic track
-- **Rabindranath Tagore Cultural Mandapam (Abhimanch)**: 600-seat open-air amphitheater
-- **DHSGSU Innovation & Incubation Centre (IIC)**: Startup workspace & pitch studio
-- **Pt. Motilal Nehru Moot Court & Law Hall**: Model courtroom with deliberation suites
+### 1. Student & Organizer Login (`/login`)
+| Role | Name | University ID / Email | Default Password | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Student** | Amit Sharma | `Y23141042` / `amit.sharma@dhsgsu.edu.in` | `student123` | Active Student |
+| **Verified Organizer** | Dr. Alok Sahay | `EMP-DCSA-104` / `alok.sahay@dhsgsu.edu.in` | `organizer123` | Verified Faculty Convener |
+| **Pending Organizer** | Priya Patel | `Y23122018` / `priya.patel@dhsgsu.edu.in` | `organizer123` | Verification Pending |
+| **Rejected Organizer** | Rohan Mehra | `Y23141088` / `rohan.mehra@dhsgsu.edu.in` | `organizer123` | Verification Rejected |
 
----
-
-## 🔐 Demo Credentials (Role-Based Login)
-
-Use the `/login` page (or the Quick Demo Credentials drawer on `/login`) to sign in as any role:
-
-| Role | Name | University ID / Email | Status |
-| :--- | :--- | :--- | :--- |
-| **Student** | Amit Sharma | `Y23141042` / `amit.sharma@dhsgsu.edu.in` | Active Student |
-| **Verified Organizer** | Dr. Alok Sahay | `EMP-DCSA-104` / `alok.sahay@dhsgsu.edu.in` | Verified Faculty Convener |
-| **Pending Organizer** | Priya Patel | `Y23122018` / `priya.patel@dhsgsu.edu.in` | Verification Pending |
-| **Rejected Organizer** | Rohan Mehra | `Y23141088` / `rohan.mehra@dhsgsu.edu.in` | Verification Rejected |
-| **University Admin** | Prof. S.P. Gautam | `ADMIN-DSW-001` / `dsw@dhsgsu.edu.in` | Dean of Students' Welfare |
+### 2. Controlled University Administrator Login (`/admin/login`)
+Admin credentials are **never** displayed on public screens and Admin self-registration is disabled. Evaluators can sign in at **`/admin/login`** using the seeded institutional administrator account (configurable via `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables):
+- **Portal URL**: `/admin/login`
+- **Admin Email / ID**: `dsw@dhsgsu.edu.in` (or `ADMIN-DSW-001`)
+- **Seeded Password**: `admin123` (or `process.env.ADMIN_PASSWORD`)
 
 ---
 
@@ -101,19 +84,22 @@ Use the `/login` page (or the Quick Demo Credentials drawer on `/login`) to sign
 git clone https://github.com/itsxmit1503/Parisar.git
 cd Parisar
 
-# Install frontend dependencies & run dev server
+# Install dependencies & start development server
 npm install
 npm run dev
 
-# Run REST API Backend Server (Port 10000)
-cd server
-npm install
-npm start
+# Production build verification
+npm run build
 ```
 
 ---
 
-## 📄 License & Attribution
+## 📄 Documentation & Judge Defense Reports
+- [**Final Feature Matrix (`PARISAR_FINAL_FEATURE_MATRIX.md`)**](./PARISAR_FINAL_FEATURE_MATRIX.md)
+- [**Judge Defense & Viva Q&A (`PARISAR_JUDGE_DEFENSE_QA.md`)**](./PARISAR_JUDGE_DEFENSE_QA.md)
 
+---
+
+## 📄 License & Attribution
 Designed and engineered for **Dr. Harisingh Gour Vishwavidyalaya (DHSGSU)**, Sagar (M.P.), India.  
 Central University • Established 1946.

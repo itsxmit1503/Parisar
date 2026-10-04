@@ -9,8 +9,7 @@ import {
   MapPin, 
   Clock, 
   CheckCircle2, 
-  ShieldCheck, 
-  QrCode
+  ShieldCheck
 } from 'lucide-react';
 import { Badge, CategoryBadge } from '../ui/Badge';
 import { Button } from '../ui/Button';
@@ -41,10 +40,10 @@ export const MyPassesView: React.FC<MyPassesViewProps> = ({ onOpenPass, onExplor
   });
 
   const handleCancelRegistration = (regId: string, eventTitle: string) => {
-    if (confirm(`Are you sure you want to cancel your pass for "${eventTitle}"? Your seat will be returned to the open DHSGSU student pool.`)) {
+    if (confirm(`Are you sure you want to cancel your registration for "${eventTitle}"? Your seat will be returned to the open DHSGSU student pool.`)) {
       const res = cancelRegistration(regId);
       if (res.success) {
-        showToast('info', `Registration for "${eventTitle}" cancelled.`, 'Pass Revoked');
+        showToast('info', `Registration for "${eventTitle}" cancelled.`, 'Registration Cancelled');
       } else {
         showToast('error', res.error?.message || 'Failed to cancel registration.', 'Cancellation Error');
       }
@@ -60,10 +59,10 @@ export const MyPassesView: React.FC<MyPassesViewProps> = ({ onOpenPass, onExplor
             PARISAR • DHSGSU Credentials
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
-            My Digital Event Passes
+            My Event Registrations &amp; Digital Cards
           </h1>
           <p className="text-xs text-[#62605B] mt-0.5">
-            Your single-use, verified optical QR passes for Dr. Harisingh Gour Vishwavidyalaya sessions.
+            Your official digital registration cards and verified attendance status for Dr. Harisingh Gour Vishwavidyalaya events.
           </p>
         </div>
 
@@ -82,7 +81,7 @@ export const MyPassesView: React.FC<MyPassesViewProps> = ({ onOpenPass, onExplor
               : 'bg-[#FCFAF5] text-[#18212B] border-[#B9B4AA] shadow-[1px_1px_0_0_#18212B] hover:bg-[#EAE5DB]'
           }`}
         >
-          Active Passes ({enrichedRegs.filter(i => i.reg.status === 'CONFIRMED' && !i.reg.checkedInAt).length})
+          Confirmed Registrations ({enrichedRegs.filter(i => i.reg.status === 'CONFIRMED' && !i.reg.checkedInAt).length})
         </button>
         <button
           onClick={() => setFilter('attended')}
@@ -92,7 +91,7 @@ export const MyPassesView: React.FC<MyPassesViewProps> = ({ onOpenPass, onExplor
               : 'bg-[#FCFAF5] text-[#18212B] border-[#B9B4AA] shadow-[1px_1px_0_0_#18212B] hover:bg-[#EAE5DB]'
           }`}
         >
-          Attended & Verified ({enrichedRegs.filter(i => Boolean(i.reg.checkedInAt)).length})
+          Attended &amp; Verified ({enrichedRegs.filter(i => Boolean(i.reg.checkedInAt)).length})
         </button>
         <button
           onClick={() => setFilter('cancelled')}
@@ -102,7 +101,7 @@ export const MyPassesView: React.FC<MyPassesViewProps> = ({ onOpenPass, onExplor
               : 'bg-[#FCFAF5] text-[#18212B] border-[#B9B4AA] shadow-[1px_1px_0_0_#18212B] hover:bg-[#EAE5DB]'
           }`}
         >
-          Cancelled Passes ({enrichedRegs.filter(i => i.reg.status === 'CANCELLED').length})
+          Cancelled ({enrichedRegs.filter(i => i.reg.status === 'CANCELLED').length})
         </button>
       </div>
 
@@ -139,13 +138,13 @@ export const MyPassesView: React.FC<MyPassesViewProps> = ({ onOpenPass, onExplor
                     {isCheckedIn ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-[#2F613B] bg-[#EBF3ED] px-2 py-0.5 rounded-[2px] border border-[#2F613B]/30">
                         <CheckCircle2 className="w-3 h-3 text-[#2F613B]" />
-                        Attendance Verified
+                        Attendance Verified (Present)
                       </span>
                     ) : isCancelled ? (
-                      <Badge variant="error">Pass Revoked</Badge>
+                      <Badge variant="error">Registration Cancelled</Badge>
                     ) : (
                       <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[2px] bg-[#EAE5DB] text-[#B6533C] border border-[#B9B4AA]">
-                        Pass Confirmed
+                        Registration Confirmed
                       </span>
                     )}
                   </div>
@@ -169,11 +168,11 @@ export const MyPassesView: React.FC<MyPassesViewProps> = ({ onOpenPass, onExplor
                     </div>
                   </div>
 
-                  {/* Token Box */}
+                  {/* Registration ID Box */}
                   <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[10px] font-mono uppercase text-[#62605B]">Pass Token:</span>
+                    <span className="text-[10px] font-mono uppercase text-[#62605B]">Registration ID:</span>
                     <span className="font-mono text-xs font-bold text-[#18212B] bg-[#EAE5DB] px-2 py-0.5 rounded-[2px] border border-[#B9B4AA]">
-                      {reg.qrToken}
+                      {reg._id.toUpperCase()} ({reg.qrToken})
                     </span>
                   </div>
                 </div>
@@ -183,10 +182,10 @@ export const MyPassesView: React.FC<MyPassesViewProps> = ({ onOpenPass, onExplor
                     <Button
                       variant="primary"
                       size="sm"
-                      leftIcon={<QrCode className="w-3.5 h-3.5" />}
+                      leftIcon={<ShieldCheck className="w-3.5 h-3.5" />}
                       onClick={() => onOpenPass(reg, event)}
                     >
-                      {isCheckedIn ? 'View Pass' : 'Show Digital Pass'}
+                      {isCheckedIn ? 'View Registration Card' : 'Digital Registration Card'}
                     </Button>
                   )}
 

@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { 
   Calendar, 
   Users, 
-  QrCode, 
+  UserCheck, 
   PlusCircle, 
   MapPin, 
   ArrowRight,
@@ -50,7 +50,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
   const draftCount = myEvents.filter(e => e.status === 'DRAFT').length;
   const pendingReviewCount = myEvents.filter(e => e.status === 'PENDING_REVIEW').length;
   const publishedCount = myEvents.filter(e => e.status === 'PUBLISHED' || e.status === 'APPROVED').length;
-  const ongoingCount = myEvents.filter(e => e.status === 'ONGOING' || e.attendanceSessionStatus === 'ACTIVE').length;
+  const ongoingCount = myEvents.filter(e => e.status === 'ONGOING' || e.attendanceSessionStatus === 'ACTIVE' || e.attendanceSessionStatus === 'OPEN').length;
   const completedCount = myEvents.filter(e => e.status === 'COMPLETED').length;
   const rejectedCount = myEvents.filter(e => e.status === 'REJECTED').length;
   const totalRegistrations = myEvents.reduce((sum, e) => sum + e.registrationCount, 0);
@@ -199,7 +199,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                           {evt.eventMode}
                         </span>
                       )}
-                      {evt.attendanceSessionStatus === 'ACTIVE' && (
+                      {(evt.attendanceSessionStatus === 'ACTIVE' || evt.attendanceSessionStatus === 'OPEN') && (
                         <span className="px-2 py-0.5 rounded-[2px] bg-[#EBF3ED] border border-[#2F613B]/40 text-[10px] font-mono font-bold text-[#2F613B]">
                           ● Attendance Session Live
                         </span>
@@ -259,7 +259,7 @@ export const OrganizerDashboard: React.FC<OrganizerDashboardProps> = ({
                       <Button
                         variant="primary"
                         size="md"
-                        leftIcon={<QrCode className="w-4 h-4" />}
+                        leftIcon={<UserCheck className="w-4 h-4" />}
                         onClick={() => onScanAttendance(evt._id)}
                       >
                         Attendance

@@ -7,7 +7,7 @@ import {
   Calendar, 
   MapPin, 
   Users, 
-  QrCode, 
+  UserCheck, 
   Megaphone, 
   Award, 
   PlusCircle, 
@@ -265,7 +265,7 @@ export const ManageEventsList: React.FC<ManageEventsListProps> = ({
                       </span>
                     )}
 
-                    {(evt.status === 'PUBLISHED' || evt.status === 'APPROVED') && evt.attendanceSessionStatus !== 'ACTIVE' && (
+                    {(evt.status === 'PUBLISHED' || evt.status === 'APPROVED') && evt.attendanceSessionStatus !== 'ACTIVE' && evt.attendanceSessionStatus !== 'OPEN' && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -280,7 +280,7 @@ export const ManageEventsList: React.FC<ManageEventsListProps> = ({
                       <Button
                         variant="primary"
                         size="sm"
-                        leftIcon={<QrCode className="w-3.5 h-3.5" />}
+                        leftIcon={<UserCheck className="w-3.5 h-3.5" />}
                         onClick={() => onScanAttendance(evt._id)}
                       >
                         Attendance Console

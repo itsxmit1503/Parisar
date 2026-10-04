@@ -20,6 +20,7 @@ import {
 import { useApp } from '../../context/AppContext';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
+import { UserAvatar } from '../ui/UserAvatar';
 import { useToast } from '../ui/Toast';
 
 interface RoleProfileViewProps {
@@ -95,10 +96,10 @@ export const RoleProfileView: React.FC<RoleProfileViewProps> = ({ onLogout }) =>
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
             <div className="relative">
-              <img
-                src={currentUser.profileImage}
-                alt={currentUser.name}
-                className="w-20 h-20 sm:w-24 sm:h-24 rounded-[3px] border-2 border-[#18212B] object-cover shadow-[2px_2px_0_0_#18212B]"
+              <UserAvatar
+                name={currentUser.name}
+                profileImage={currentUser.profileImage}
+                size="xl"
               />
               <span
                 className={`absolute -bottom-2 -right-2 px-2 py-0.5 rounded-[2px] text-white text-[9px] font-mono font-bold tracking-wider uppercase border border-[#18212B] ${

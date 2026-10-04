@@ -13,6 +13,19 @@ export interface RegisteredDevice {
   lastActiveAt: string;
 }
 
+export interface UserNotificationPreferences {
+  emailConfirmations: boolean;
+  eventReminders: boolean;
+  venueChanges: boolean;
+  certificateAlerts: boolean;
+}
+
+export interface UserPrivacyPreferences {
+  showProfileToOrganizers: boolean;
+  showParticipationInPassport?: boolean;
+  showPassportPublicly?: boolean;
+}
+
 export interface User {
   _id: string;
   name: string;
@@ -24,6 +37,10 @@ export interface User {
   role: UserRole;
   interests: string[];
   profileImage: string;
+  bio?: string;
+  preferredLanguage?: 'en' | 'hi';
+  notificationPreferences?: UserNotificationPreferences;
+  privacyPreferences?: UserPrivacyPreferences;
   designation?: string;
   organization?: string;
   phone?: string;
@@ -74,7 +91,7 @@ export type EventStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'PUBLISHED' 
 
 export type EventMode = 'OFFLINE' | 'ONLINE' | 'HYBRID';
 
-export type AttendanceSessionStatus = 'NOT_STARTED' | 'ACTIVE' | 'CLOSED';
+export type AttendanceSessionStatus = 'NOT_STARTED' | 'OPEN' | 'ACTIVE' | 'FINALIZED' | 'CLOSED';
 
 export type CampusLocationCategory =
   | 'Academic'
@@ -141,6 +158,8 @@ export interface CampusEvent {
   attendanceSessionStatus?: AttendanceSessionStatus;
   attendanceStartedAt?: string;
   attendanceClosedAt?: string;
+  attendanceFinalizedAt?: string;
+  attendanceFinalizedBy?: string;
   rejectionReason?: string;
   createdAt: string;
   updatedAt: string;
@@ -162,9 +181,9 @@ export interface Registration {
   checkedInAt?: string | null;
 }
 
-export type AttendanceMethod = 'qr' | 'manual' | 'online_session';
+export type AttendanceMethod = 'roster' | 'online_session' | 'admin_override' | 'qr' | 'manual';
 
-export type ParticipantSessionStatus = 'JOINED' | 'ACTIVE' | 'PAUSED_DISCONNECTED' | 'COMPLETED';
+export type ParticipantSessionStatus = 'JOINED' | 'ACTIVE' | 'PAUSED' | 'PAUSED_DISCONNECTED' | 'RESUMED' | 'ENDED' | 'COMPLETED';
 
 export interface AttendanceRecord {
   _id: string;
@@ -174,7 +193,9 @@ export interface AttendanceRecord {
   userName: string;
   userRollNumber: string;
   userDepartment: string;
+  status?: 'PRESENT' | 'ABSENT';
   checkedInAt: string;
+  checkedOutAt?: string;
   checkedInBy: string;
   method: AttendanceMethod;
   participatedMinutes?: number;
@@ -261,6 +282,66 @@ export interface PassportStats {
   achievements: AchievementBadge[];
 }
 
+export interface AttendanceSession {
+  id: string;
+  eventId: string;
+  studentId?: string;
+  registrationId?: string;
+  organizerId?: string;
+  joinedAt?: string;
+  leftAt?: string;
+  startedAt?: string;
+  endedAt?: string;
+  verifiedDuration?: number;
+  mode?: EventMode;
+  minimumParticipationPercent?: number;
+  status: 'NOT_STARTED' | 'OPEN' | 'ACTIVE' | 'PAUSED' | 'DISCONNECTED' | 'RESUMED' | 'ENDED' | 'FINALIZED' | 'CLOSED';
+  deviceId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type AuditAction =
+  | 'LOGIN'
+  | 'LOGOUT'
+  | 'STUDENT_REGISTERED'
+  | 'ORGANIZER_REQUEST'
+  | 'ORGANIZER_APPROVED'
+  | 'ORGANIZER_REJECTED'
+  | 'EVENT_CREATED'
+  | 'EVENT_SUBMITTED'
+  | 'EVENT_APPROVED'
+  | 'EVENT_REJECTED'
+  | 'EVENT_CANCELLED'
+  | 'REGISTRATION_CREATED'
+  | 'REGISTRATION_CANCELLED'
+  | 'ATTENDANCE_STARTED'
+  | 'ATTENDANCE_CHECKIN'
+  | 'ATTENDANCE_CHECKOUT'
+  | 'ATTENDANCE_MARKED'
+  | 'ATTENDANCE_FINALIZED'
+  | 'ATTENDANCE_ADMIN_OVERRIDE'
+  | 'ONLINE_SESSION_JOINED'
+  | 'ONLINE_SESSION_LEFT'
+  | 'CERTIFICATE_ISSUED'
+  | 'DEVICE_REGISTERED'
+  | 'DEVICE_REVOKED'
+  | 'ADMIN_ROLE_CHANGE'
+  | 'VENUE_UPDATED'
+  | 'PROFILE_UPDATED';
+
+export interface AuditLogEntry {
+  _id: string;
+  actor: string;
+  actorName?: string;
+  role: UserRole;
+  action: AuditAction;
+  entity: string;
+  entityId: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
 export type ScanVerificationResult = 
   | { status: 'SUCCESS'; message: string; registration: Registration; event: CampusEvent; attendee: User }
   | { status: 'DUPLICATE'; message: string; registration: Registration; event: CampusEvent; attendee: User; checkedInAt: string }
@@ -270,3 +351,5 @@ export type ScanVerificationResult =
 export type ApiResponse<T> = 
   | { success: true; data: T }
   | { success: false; error: { code: string; message: string } };
+
+

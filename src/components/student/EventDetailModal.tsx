@@ -83,7 +83,10 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
   const minPct = event.minParticipationPercent ?? 80;
   const requiredMinutes = Math.ceil((durationMinutes * minPct) / 100);
   const eventMode = event.eventMode || 'OFFLINE';
-  const isSessionActive = event.attendanceSessionStatus === 'ACTIVE' || event.status === 'ONGOING';
+  const isSessionActive =
+    event.attendanceSessionStatus === 'OPEN' ||
+    event.attendanceSessionStatus === 'ACTIVE' ||
+    event.status === 'ONGOING';
 
   const handleRegister = async () => {
     setIsRegistering(true);
@@ -118,13 +121,15 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
     }
   };
 
-  const handleValidateSessionAttendance = (addMins = 60) => {
-    const res = joinOrValidateOnlineAttendance(event._id, addMins);
+  const handleValidateSessionAttendance = (addMins = 60, leaveSession = false) => {
+    const res = joinOrValidateOnlineAttendance(event._id, addMins, leaveSession);
     if (res.success) {
       showToast(
         'success',
-        `Participation logged: ${res.data.participatedMinutes}/${res.data.totalEventMinutes} min (${res.data.participationPercent}%).`,
-        'Attendance Validated'
+        leaveSession
+          ? `Online session ended. Final verified duration: ${res.data.participatedMinutes}/${res.data.totalEventMinutes} min (${res.data.participationPercent}%).`
+          : `Online session active: ${res.data.participatedMinutes}/${res.data.totalEventMinutes} min (${res.data.participationPercent}%).`,
+        leaveSession ? 'Left Online Event' : 'Online Session Verified'
       );
     } else {
       showToast('error', res.error.message, 'Attendance Error');
@@ -339,39 +344,137 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
           </div>
         </div>
 
-        {/* 4. Live Online/Hybrid Session Attendance Validation Widget (if registered & active) */}
-        {isRegistered && isSessionActive && (
+        {/* 4. Attendance Status & Online Session Participation Widget */}
+        {isRegistered && (
           <div className="p-4 bg-[#EBF3ED] border border-[#2F613B]/40 rounded-[4px] space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <Radio className="w-4 h-4 text-[#2F613B] animate-pulse" />
+                <Radio className={`w-4 h-4 text-[#2F613B] ${isSessionActive ? 'animate-pulse' : ''}`} />
                 <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#2F613B]">
-                  Live Attendance Session Open ({eventMode})
+                  {eventMode === 'OFFLINE'
+                    ? 'Offline Venue Roster Attendance'
+                    : isSessionActive
+                    ? `Live Online Session Open (${eventMode})`
+                    : `Online Session Attendance (${eventMode})`}
                 </span>
               </div>
               <span className="text-xs font-mono font-bold text-[#18212B]">
                 {userAttendance
-                  ? `${userAttendance.participatedMinutes ?? 0}/${durationMinutes} min (${userAttendance.participationPercent ?? 0}%)`
+                  ? `${userAttendance.participatedMinutes ?? durationMinutes}/${durationMinutes} min (${userAttendance.participationPercent ?? 100}%)`
+                  : eventMode === 'OFFLINE'
+                  ? 'Pending Roster Check'
                   : `0/${durationMinutes} min (0%)`}
               </span>
             </div>
-            <p className="text-xs text-[#18212B] leading-relaxed">
-              The organizer has opened live attendance validation. Validate your active session presence below or scan your QR pass at the venue entrance. Certificate eligibility requires <strong>{minPct}% ({requiredMinutes} mins)</strong> active participation.
-            </p>
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <div className="text-[11px] font-mono font-bold text-[#2F613B]">
-                {userAttendance?.eligibleForCertificate
-                  ? '✓ Certificate Threshold Reached'
-                  : `Required: ${requiredMinutes} mins (${minPct}%)`}
+
+            {eventMode === 'OFFLINE' ? (
+              <div className="text-xs text-[#18212B] leading-relaxed space-y-1.5">
+                <p>
+                  This is a physical campus event at <strong>{event.venue}</strong>. The event organizer marks attendance directly from the official registered student roster using your Name and Roll Number (<strong>{userRegistration?.userRollNumber}</strong>).
+                </p>
+                <div className="flex items-center justify-between pt-1 font-mono text-[11px]">
+                  <span>
+                    Status:{' '}
+                    <strong className={userAttendance ? 'text-[#2F613B]' : 'text-[#B26B16]'}>
+                      {userAttendance ? 'PRESENT (VERIFIED ON ROSTER)' : 'REGISTERED — AWAITING ROSTER MARK'}
+                    </strong>
+                  </span>
+                  <span>
+                    Certificate Eligibility:{' '}
+                    <strong>{userAttendance ? 'ELIGIBLE ✓' : 'REQUIRES PRESENT MARK'}</strong>
+                  </span>
+                </div>
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                onClick={() => handleValidateSessionAttendance(75)}
-              >
-                {userAttendance ? 'Validate Active Presence (+75 min)' : 'Join & Validate Session (+75 min)'}
-              </Button>
-            </div>
+            ) : (
+              <>
+                <p className="text-xs text-[#18212B] leading-relaxed">
+                  Join the authenticated online event session below. The server tracks your session timestamps (`joinedAt` → `leftAt`) and verified participation duration. Certificate eligibility requires <strong>{minPct}% ({requiredMinutes} mins)</strong> of the {durationMinutes}-minute session.
+                </p>
+
+                {userAttendance && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 rounded bg-[#FCFAF5] border border-[#B9B4AA] text-[11px] font-mono">
+                    <div>
+                      <span className="text-[#62605B] block">Joined</span>
+                      <strong className="text-[#18212B]">
+                        {new Date(userAttendance.checkedInAt).toLocaleTimeString('en-IN', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-[#62605B] block">Left / Status</span>
+                      <strong className="text-[#18212B]">
+                        {userAttendance.checkedOutAt
+                          ? new Date(userAttendance.checkedOutAt).toLocaleTimeString('en-IN', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : userAttendance.sessionStatus || 'ACTIVE'}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-[#62605B] block">Verified Duration</span>
+                      <strong className="text-[#18212B]">
+                        {userAttendance.participatedMinutes ?? 0} / {requiredMinutes} mins
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-[#62605B] block">Certificate Status</span>
+                      <strong
+                        className={
+                          userAttendance.eligibleForCertificate
+                            ? 'text-[#2F613B]'
+                            : 'text-[#A83226]'
+                        }
+                      >
+                        {userAttendance.eligibleForCertificate ? 'ELIGIBLE ✓' : 'NOT ELIGIBLE'}
+                      </strong>
+                    </div>
+                  </div>
+                )}
+
+                {isSessionActive && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="text-[11px] font-mono font-bold text-[#2F613B]">
+                      {userAttendance?.eligibleForCertificate
+                        ? '✓ Minimum Duration Threshold Reached (Eligible for Certificate)'
+                        : `Required: ${requiredMinutes} mins (${minPct}% of ${durationMinutes} mins)`}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {!userAttendance ? (
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleValidateSessionAttendance(75, false)}
+                        >
+                          JOIN EVENT
+                        </Button>
+                      ) : (
+                        <>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleValidateSessionAttendance(75, false)}
+                          >
+                            Continue Session (+75m Verified)
+                          </Button>
+                          {userAttendance.sessionStatus !== 'COMPLETED' && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleValidateSessionAttendance(0, true)}
+                            >
+                              Leave Event
+                            </Button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
 

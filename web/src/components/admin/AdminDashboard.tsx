@@ -6,7 +6,6 @@ import {
   Users, 
   ShieldCheck, 
   ArrowRight,
-  QrCode,
   UserCheck,
   Megaphone,
   Building2,
@@ -359,7 +358,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
           <div className="w-9 h-9 rounded-[3px] bg-[#EAE5DB] text-[#2F613B] border border-[#B9B4AA] flex items-center justify-center shrink-0">
-            <QrCode className="w-4 h-4" />
+            <UserCheck className="w-4 h-4" />
           </div>
         </button>
 

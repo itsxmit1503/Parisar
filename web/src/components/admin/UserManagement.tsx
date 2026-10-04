@@ -6,6 +6,7 @@ import { UserRole } from '../../types';
 import { Search } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { useToast } from '../ui/Toast';
+import { UserAvatar } from '../ui/UserAvatar';
 
 export const UserManagement: React.FC = () => {
   const { allUsers, adminUpdateUserRole, currentUser } = useApp();
@@ -102,10 +103,10 @@ export const UserManagement: React.FC = () => {
               <tr key={user._id} className="hover:bg-[#EAE5DB]/40 transition-colors">
                 <td className="py-3 px-4">
                   <div className="flex items-center gap-2.5">
-                    <img
-                      src={user.profileImage}
-                      alt={user.name}
-                      className="w-8 h-8 rounded-[2px] border border-[#B9B4AA] object-cover"
+                    <UserAvatar
+                      name={user.name}
+                      profileImage={user.profileImage}
+                      size="sm"
                     />
                     <div>
                       <div className="font-bold text-[#18212B]">{user.name}</div>

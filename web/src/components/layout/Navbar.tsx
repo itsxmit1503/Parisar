@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { 
   Bell, 
-  QrCode, 
+  UserCheck, 
   PlusCircle, 
   ShieldCheck, 
   User,
@@ -14,7 +14,6 @@ import {
   Edit3,
   ChevronDown,
   LogIn,
-  UserPlus,
   Compass,
   Clock,
   Home,
@@ -25,6 +24,7 @@ import {
 } from 'lucide-react';
 import { ParisarLogo } from '../ui/ParisarLogo';
 import { Button } from '../ui/Button';
+import { UserAvatar } from '../ui/UserAvatar';
 
 export type ActiveTab = 
   // Landing & Auth Pages
@@ -265,7 +265,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       onClick={() => handleNavClick('organizer-scanner')}
                       className={desktopNavBtnClass(activeTab === 'organizer-scanner')}
                     >
-                      <QrCode className="w-4 h-4 text-[#B6533C]" />
+                      <UserCheck className="w-4 h-4 text-[#B6533C]" />
                       <span>Attendance</span>
                     </button>
                     <button
@@ -396,10 +396,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                       className="min-h-[44px] flex items-center gap-2 pl-2 pr-2.5 py-1 rounded-[3px] border border-[#B9B4AA] bg-[#EAE5DB]/50 hover:bg-[#EAE5DB] transition-all cursor-pointer touch-manipulation"
                       title="Account & Profile Menu"
                     >
-                      <img
-                        src={currentUser.profileImage}
-                        alt={currentUser.name}
-                        className="w-7 h-7 rounded-[2px] border border-[#18212B] object-cover"
+                      <UserAvatar
+                        name={currentUser.name}
+                        profileImage={currentUser.profileImage}
+                        size="sm"
                       />
                       <div className="hidden sm:block text-left leading-tight">
                         <div className="text-xs font-bold text-[#18212B] truncate max-w-[130px]">
@@ -416,10 +416,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                       <div className="absolute right-0 mt-2 w-72 bg-[#FCFAF5] border-2 border-[#18212B] rounded-[4px] shadow-[4px_4px_0_0_#18212B] py-2 z-50">
                         <div className="px-4 py-3 border-b border-[#B9B4AA] bg-[#EAE5DB]/50 space-y-1">
                           <div className="flex items-center gap-2.5">
-                            <img
-                              src={currentUser.profileImage}
-                              alt={currentUser.name}
-                              className="w-10 h-10 rounded-[2px] border border-[#18212B] object-cover shrink-0"
+                            <UserAvatar
+                              name={currentUser.name}
+                              profileImage={currentUser.profileImage}
+                              size="md"
                             />
                             <div className="min-w-0">
                               <div className="text-xs font-extrabold text-[#18212B] truncate">
@@ -574,7 +574,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <Ticket className="w-5 h-5" />
-                <span className="text-[11px] leading-none">Pass</span>
+                <span className="text-[11px] leading-none">Card</span>
                 {userConfirmedPasses > 0 && (
                   <span className="absolute top-1 right-2.5 w-4 h-4 rounded-full bg-[#B6533C] text-white text-[9px] font-bold flex items-center justify-center">
                     {userConfirmedPasses}
@@ -742,7 +742,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     : 'text-[#62605B] active:bg-[#EAE5DB]'
                 }`}
               >
-                <QrCode className="w-5 h-5" />
+                <UserCheck className="w-5 h-5" />
                 <span className="text-[11px] leading-none">Attendance</span>
               </button>
 

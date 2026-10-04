@@ -57,7 +57,7 @@ interface AppContextType {
     password?: string;
   }) => Promise<ApiResponse<User>>;
   resubmitOrganizerVerification: (reason: string, designation?: string, department?: string) => ApiResponse<OrganizerVerificationRequest>;
-  updateUserProfile: (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization' | 'passwordHash'>>) => ApiResponse<User>;
+  updateUserProfile: (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization' | 'passwordHash' | 'profileImage' | 'bio' | 'preferredLanguage' | 'notificationPreferences' | 'privacyPreferences'>>) => ApiResponse<User>;
   verifyOrReplaceDevice: (platform: 'web' | 'mobile', deviceName?: string) => ApiResponse<User>;
   revokeDevice: (deviceId: string) => ApiResponse<User>;
   logout: () => void;
@@ -81,12 +81,15 @@ interface AppContextType {
   markAllNotificationsAsRead: () => void;
   getRecommendedEvents: () => CampusEvent[];
   getStudentPassportStats: (userId?: string) => PassportStats;
-  joinOrValidateOnlineAttendance: (eventId: string, addMinutes?: number) => ApiResponse<AttendanceRecord>;
+  joinOrValidateOnlineAttendance: (eventId: string, addMinutes?: number, leaveSession?: boolean) => ApiResponse<AttendanceRecord>;
   
-  // Organizer Actions
+  // Organizer & Roster Attendance Actions
   createEvent: (eventData: Omit<CampusEvent, '_id' | 'organizerId' | 'organizerName' | 'organizerEmail' | 'registrationCount' | 'createdAt' | 'updatedAt'>, asDraft?: boolean) => ApiResponse<CampusEvent>;
   updateEvent: (eventId: string, updates: Partial<CampusEvent>) => ApiResponse<CampusEvent>;
   verifyAndCheckIn: (eventId: string, qrToken: string, method?: 'qr' | 'manual') => ScanVerificationResult;
+  markRosterAttendance: (eventId: string, registrationId: string, status: 'PRESENT' | 'ABSENT') => ApiResponse<AttendanceRecord | null>;
+  markAllRosterPresent: (eventId: string) => ApiResponse<number>;
+  resetRosterAttendance: (eventId: string) => ApiResponse<boolean>;
   startAttendanceSession: (eventId: string) => ApiResponse<CampusEvent>;
   closeAttendanceSession: (eventId: string) => ApiResponse<CampusEvent>;
   updateParticipantParticipation: (attendanceId: string, participatedMinutes: number, sessionStatus?: AttendanceRecord['sessionStatus']) => ApiResponse<AttendanceRecord>;
@@ -692,7 +695,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       passwordHash: data.password,
       organizerStatus: 'NONE',
       interests: ['Workshop', 'Seminar', 'Cultural', 'Competition'],
-      profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+      profileImage: '',
       phone: '+91 98260 00000',
       registeredDevices: [
         {
@@ -813,7 +816,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       organizerRequest: newReq,
       passwordHash: data.password,
       interests: ['Seminar', 'Workshop', 'Competition'],
-      profileImage: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=250&q=80',
+      profileImage: '',
       phone: data.phone.trim() || '+91 98260 00000',
       createdAt: nowIso,
       updatedAt: nowIso,
@@ -878,14 +881,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, data: updatedReq };
   };
 
-  const updateUserProfile = (updates: Partial<Pick<User, 'name' | 'department' | 'semester' | 'designation' | 'phone' | 'organization' | 'passwordHash'>>): ApiResponse<User> => {
+  const updateUserProfile = (
+    updates: Partial<
+      Pick<
+        User,
+        | 'name'
+        | 'department'
+        | 'semester'
+        | 'designation'
+        | 'phone'
+        | 'organization'
+        | 'passwordHash'
+        | 'profileImage'
+        | 'bio'
+        | 'preferredLanguage'
+        | 'notificationPreferences'
+        | 'privacyPreferences'
+      >
+    >
+  ): ApiResponse<User> => {
     const nowIso = new Date().toISOString();
     const updatedUser: User = {
       ...currentUser,
       ...updates,
       updatedAt: nowIso,
     };
-    setAllUsers(prev => prev.map(u => u._id === currentUser._id ? updatedUser : u));
+    setAllUsers(prev => prev.map(u => (u._id === currentUser._id ? updatedUser : u)));
+
+    // Sync profile update to backend /api/v1/users for Web + Android cross-platform persistence
+    fetch('/api/v1/users', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      },
+      body: JSON.stringify({
+        userId: currentUser._id,
+        ...updates,
+      }),
+    }).catch(() => {});
+
     return { success: true, data: updatedUser };
   };
 
@@ -1016,18 +1051,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, data: true };
   };
 
-  const joinOrValidateOnlineAttendance = (eventId: string, addMinutes = 45): ApiResponse<AttendanceRecord> => {
+  const joinOrValidateOnlineAttendance = (eventId: string, addMinutes = 45, leaveSession = false): ApiResponse<AttendanceRecord> => {
     const targetEvent = events.find(e => e._id === eventId);
     if (!targetEvent) {
       return { success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Event not found.' } };
     }
 
-    if (targetEvent.attendanceSessionStatus !== 'ACTIVE' && targetEvent.status !== 'ONGOING') {
+    if (
+      targetEvent.attendanceSessionStatus !== 'OPEN' &&
+      targetEvent.attendanceSessionStatus !== 'ACTIVE' &&
+      targetEvent.status !== 'ONGOING'
+    ) {
       return {
         success: false,
         error: {
           code: 'ATTENDANCE_NOT_ACTIVE',
-          message: 'Attendance session has not been started by the Organizer yet.',
+          message: 'Online attendance session has not been opened by the Organizer yet.',
         },
       };
     }
@@ -1038,7 +1077,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         success: false,
         error: {
           code: 'NOT_REGISTERED',
-          message: 'You must hold a confirmed registration pass before joining the attendance session.',
+          message: 'You must hold a confirmed registration before joining the online event session.',
         },
       };
     }
@@ -1049,19 +1088,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const nowIso = new Date().toISOString();
 
     const existingAtt = attendance.find(a => a.eventId === eventId && a.userId === currentUser._id);
+
+    // Sync with backend API asynchronously
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    fetch('/api/v1/attendance', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        action: leaveSession ? 'leave-online' : existingAtt ? 'validate-online' : 'join-online',
+        eventId,
+        deviceId: currentDeviceId,
+      }),
+    }).catch(() => {});
+
     if (existingAtt) {
-      const nextMinutes = Math.min(totalMinutes, (existingAtt.participatedMinutes ?? 45) + addMinutes);
+      const nextMinutes = Math.min(totalMinutes, (existingAtt.participatedMinutes ?? 45) + (leaveSession ? 0 : addMinutes));
       const nextPct = Math.min(100, Math.round((nextMinutes / totalMinutes) * 100));
       const eligible = nextPct >= minPct;
 
       const updatedRecord: AttendanceRecord = {
         ...existingAtt,
+        status: 'PRESENT',
+        method: 'online_session',
         participatedMinutes: nextMinutes,
         requiredMinutes,
         totalEventMinutes: totalMinutes,
         participationPercent: nextPct,
-        sessionStatus: nextMinutes >= totalMinutes ? 'COMPLETED' : 'ACTIVE',
+        sessionStatus: leaveSession || nextMinutes >= totalMinutes ? 'COMPLETED' : 'ACTIVE',
         lastValidatedAt: nowIso,
+        checkedOutAt: leaveSession ? nowIso : existingAtt.checkedOutAt,
         eligibleForCertificate: eligible,
       };
 
@@ -1080,7 +1136,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       userRollNumber: currentUser.rollNumber || 'N/A',
       userDepartment: currentUser.department,
       checkedInAt: nowIso,
-      checkedInBy: 'ONLINE_SESSION_HEARTBEAT',
+      checkedInBy: 'ONLINE_SESSION_VERIFIED',
+      status: 'PRESENT',
       method: 'online_session',
       participatedMinutes: initialMinutes,
       requiredMinutes,
@@ -1315,16 +1372,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return { success: false, error: { code: 'NOT_FOUND', message: 'Event not found.' } };
     }
 
+    if (
+      (existing.attendanceSessionStatus === 'FINALIZED' || existing.attendanceSessionStatus === 'CLOSED') &&
+      currentUser.role !== 'admin'
+    ) {
+      return {
+        success: false,
+        error: {
+          code: 'ATTENDANCE_FINALIZED',
+          message: 'Attendance has already been finalized for this event. Only University Administration can re-open or override finalized attendance.',
+        },
+      };
+    }
+
     const nowIso = new Date().toISOString();
     const updated: CampusEvent = {
       ...existing,
       status: existing.status === 'PUBLISHED' || existing.status === 'APPROVED' ? 'ONGOING' : existing.status,
-      attendanceSessionStatus: 'ACTIVE',
+      attendanceSessionStatus: 'OPEN',
       attendanceStartedAt: nowIso,
       updatedAt: nowIso,
     };
 
     setEvents(prev => prev.map(e => (e._id === eventId ? updated : e)));
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    fetch('/api/v1/attendance', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action: 'open-attendance', eventId }),
+    }).catch(() => {});
 
     // Notify registered students that attendance session is live
     const registeredUsers = registrations.filter(r => r.eventId === eventId && r.status === 'CONFIRMED');
@@ -1335,7 +1413,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         eventId,
         type: 'EVENT_REMINDER',
         title: `Attendance Open: ${existing.title}`,
-        message: `Live attendance validation has started for "${existing.title}". Minimum required participation is ${existing.minParticipationPercent ?? 80}%.`,
+        message: existing.eventMode === 'ONLINE'
+          ? `Online attendance session is now open for "${existing.title}". Join the session to record verified participation (min ${existing.minParticipationPercent ?? 80}%).`
+          : `Attendance roster is now open for "${existing.title}" at ${existing.venue}.`,
         read: false,
         createdAt: nowIso,
       }));
@@ -1378,13 +1458,253 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const updated: CampusEvent = {
       ...existing,
       status: 'COMPLETED',
-      attendanceSessionStatus: 'CLOSED',
+      attendanceSessionStatus: 'FINALIZED',
       attendanceClosedAt: nowIso,
+      attendanceFinalizedAt: nowIso,
+      attendanceFinalizedBy: currentUser._id,
       updatedAt: nowIso,
     };
 
     setEvents(prev => prev.map(e => (e._id === eventId ? updated : e)));
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    fetch('/api/v1/attendance', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action: 'finalize-attendance', eventId }),
+    }).catch(() => {});
+
     return { success: true, data: updated };
+  };
+
+  // Offline Roster Attendance: Mark individual participant Present or Absent (Sections 2, 3, 4)
+  const markRosterAttendance = (
+    eventId: string,
+    registrationId: string,
+    status: 'PRESENT' | 'ABSENT'
+  ): ApiResponse<AttendanceRecord | null> => {
+    const targetEvent = events.find(e => e._id === eventId);
+    if (!targetEvent) {
+      return { success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Event not found.' } };
+    }
+
+    const isFinalized =
+      targetEvent.attendanceSessionStatus === 'FINALIZED' ||
+      targetEvent.attendanceSessionStatus === 'CLOSED';
+    if (isFinalized && currentUser.role !== 'admin') {
+      return {
+        success: false,
+        error: {
+          code: 'ATTENDANCE_FINALIZED',
+          message: 'Attendance is finalized for this event. Normal organizer edits are locked. Contact University Administration for an audited override.',
+        },
+      };
+    }
+
+    const reg = registrations.find(r => r._id === registrationId && r.eventId === eventId);
+    if (!reg) {
+      return { success: false, error: { code: 'REGISTRATION_NOT_FOUND', message: 'Participant registration not found.' } };
+    }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    fetch('/api/v1/attendance', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        action: 'mark-roster',
+        eventId,
+        registrationId,
+        status,
+      }),
+    }).catch(() => {});
+
+    if (status === 'ABSENT') {
+      setAttendance(prev => prev.filter(a => !(a.eventId === eventId && (a.registrationId === registrationId || a.userId === reg.userId))));
+      setRegistrations(prev => prev.map(r => (r._id === registrationId ? { ...r, checkedInAt: undefined } : r)));
+      return { success: true, data: null };
+    }
+
+    const nowIso = new Date().toISOString();
+    const totalMinutes = getEventDurationMinutes(targetEvent);
+    const minPct = targetEvent.minParticipationPercent ?? 80;
+    const requiredMinutes = Math.ceil((totalMinutes * minPct) / 100);
+    const existingAtt = attendance.find(a => a.eventId === eventId && (a.registrationId === registrationId || a.userId === reg.userId));
+
+    const record: AttendanceRecord = existingAtt
+      ? {
+          ...existingAtt,
+          status: 'PRESENT',
+          method: isFinalized && currentUser.role === 'admin' ? 'admin_override' : 'roster',
+          checkedInBy: currentUser._id,
+          participatedMinutes: totalMinutes,
+          requiredMinutes,
+          totalEventMinutes: totalMinutes,
+          participationPercent: 100,
+          sessionStatus: isFinalized ? 'COMPLETED' : 'ACTIVE',
+          lastValidatedAt: nowIso,
+          eligibleForCertificate: true,
+        }
+      : {
+          _id: `att-${Date.now()}-${reg.userId}`,
+          eventId,
+          registrationId: reg._id,
+          userId: reg.userId,
+          userName: reg.userName,
+          userRollNumber: reg.userRollNumber,
+          userDepartment: reg.userDepartment,
+          checkedInAt: nowIso,
+          checkedInBy: currentUser._id,
+          status: 'PRESENT',
+          method: isFinalized && currentUser.role === 'admin' ? 'admin_override' : 'roster',
+          participatedMinutes: totalMinutes,
+          requiredMinutes,
+          totalEventMinutes: totalMinutes,
+          participationPercent: 100,
+          sessionStatus: isFinalized ? 'COMPLETED' : 'ACTIVE',
+          lastValidatedAt: nowIso,
+          eligibleForCertificate: true,
+        };
+
+    setRegistrations(prev => prev.map(r => (r._id === registrationId ? { ...r, checkedInAt: nowIso } : r)));
+    setAttendance(prev => {
+      const idx = prev.findIndex(a => a.eventId === eventId && (a.registrationId === registrationId || a.userId === reg.userId));
+      if (idx === -1) return [record, ...prev];
+      const next = [...prev];
+      next[idx] = record;
+      return next;
+    });
+
+    // If attendance was NOT_STARTED, automatically open it
+    if (!targetEvent.attendanceSessionStatus || targetEvent.attendanceSessionStatus === 'NOT_STARTED') {
+      setEvents(prev =>
+        prev.map(e =>
+          e._id === eventId
+            ? { ...e, attendanceSessionStatus: 'OPEN', attendanceStartedAt: nowIso, updatedAt: nowIso }
+            : e
+        )
+      );
+    }
+
+    return { success: true, data: record };
+  };
+
+  // Bulk Roster Action: Mark all confirmed participants as Present
+  const markAllRosterPresent = (eventId: string): ApiResponse<number> => {
+    const targetEvent = events.find(e => e._id === eventId);
+    if (!targetEvent) {
+      return { success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Event not found.' } };
+    }
+
+    const isFinalized =
+      targetEvent.attendanceSessionStatus === 'FINALIZED' ||
+      targetEvent.attendanceSessionStatus === 'CLOSED';
+    if (isFinalized && currentUser.role !== 'admin') {
+      return {
+        success: false,
+        error: {
+          code: 'ATTENDANCE_FINALIZED',
+          message: 'Attendance is finalized for this event. Normal organizer edits are locked.',
+        },
+      };
+    }
+
+    const confirmedRegs = registrations.filter(r => r.eventId === eventId && r.status === 'CONFIRMED');
+    if (confirmedRegs.length === 0) {
+      return { success: false, error: { code: 'NO_PARTICIPANTS', message: 'No confirmed participants registered for this event.' } };
+    }
+
+    const nowIso = new Date().toISOString();
+    const totalMinutes = getEventDurationMinutes(targetEvent);
+    const minPct = targetEvent.minParticipationPercent ?? 80;
+    const requiredMinutes = Math.ceil((totalMinutes * minPct) / 100);
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    fetch('/api/v1/attendance', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action: 'mark-all-present', eventId }),
+    }).catch(() => {});
+
+    setRegistrations(prev =>
+      prev.map(r => (r.eventId === eventId && r.status === 'CONFIRMED' ? { ...r, checkedInAt: r.checkedInAt || nowIso } : r))
+    );
+
+    setAttendance(prev => {
+      const otherEventsAtt = prev.filter(a => a.eventId !== eventId);
+      const newRecords: AttendanceRecord[] = confirmedRegs.map(reg => {
+        const existing = prev.find(a => a.eventId === eventId && (a.registrationId === reg._id || a.userId === reg.userId));
+        return {
+          _id: existing?._id || `att-${Date.now()}-${reg.userId}`,
+          eventId,
+          registrationId: reg._id,
+          userId: reg.userId,
+          userName: reg.userName,
+          userRollNumber: reg.userRollNumber,
+          userDepartment: reg.userDepartment,
+          checkedInAt: existing?.checkedInAt || nowIso,
+          checkedInBy: currentUser._id,
+          status: 'PRESENT',
+          method: isFinalized && currentUser.role === 'admin' ? 'admin_override' : 'roster',
+          participatedMinutes: totalMinutes,
+          requiredMinutes,
+          totalEventMinutes: totalMinutes,
+          participationPercent: 100,
+          sessionStatus: isFinalized ? 'COMPLETED' : 'ACTIVE',
+          lastValidatedAt: nowIso,
+          eligibleForCertificate: true,
+        };
+      });
+      return [...newRecords, ...otherEventsAtt];
+    });
+
+    if (!targetEvent.attendanceSessionStatus || targetEvent.attendanceSessionStatus === 'NOT_STARTED') {
+      setEvents(prev =>
+        prev.map(e =>
+          e._id === eventId
+            ? { ...e, attendanceSessionStatus: 'OPEN', attendanceStartedAt: nowIso, updatedAt: nowIso }
+            : e
+        )
+      );
+    }
+
+    return { success: true, data: confirmedRegs.length };
+  };
+
+  // Reversible Bulk Roster Action: Reset / Undo unmarked attendance before finalization
+  const resetRosterAttendance = (eventId: string): ApiResponse<boolean> => {
+    const targetEvent = events.find(e => e._id === eventId);
+    if (!targetEvent) {
+      return { success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Event not found.' } };
+    }
+
+    const isFinalized =
+      targetEvent.attendanceSessionStatus === 'FINALIZED' ||
+      targetEvent.attendanceSessionStatus === 'CLOSED';
+    if (isFinalized && currentUser.role !== 'admin') {
+      return {
+        success: false,
+        error: {
+          code: 'ATTENDANCE_FINALIZED',
+          message: 'Attendance is finalized for this event and cannot be reset by an organizer.',
+        },
+      };
+    }
+
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    fetch('/api/v1/attendance', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ action: 'reset-roster', eventId }),
+    }).catch(() => {});
+
+    setAttendance(prev => prev.filter(a => a.eventId !== eventId));
+    setRegistrations(prev => prev.map(r => (r.eventId === eventId ? { ...r, checkedInAt: undefined } : r)));
+
+    return { success: true, data: true };
   };
 
   const updateParticipantParticipation = (
@@ -1398,6 +1718,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
 
     const evt = events.find(e => e._id === existing.eventId);
+    const isFinalized =
+      evt?.attendanceSessionStatus === 'FINALIZED' || evt?.attendanceSessionStatus === 'CLOSED';
+    if (isFinalized && currentUser.role !== 'admin') {
+      return {
+        success: false,
+        error: {
+          code: 'ATTENDANCE_FINALIZED',
+          message: 'Attendance is finalized. Only University Administration can override finalized records.',
+        },
+      };
+    }
+
     const totalMinutes = evt ? getEventDurationMinutes(evt) : (existing.totalEventMinutes || 180);
     const minPct = evt?.minParticipationPercent ?? 80;
     const requiredMinutes = Math.ceil((totalMinutes * minPct) / 100);
@@ -1420,33 +1752,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return { success: true, data: updatedRecord };
   };
 
-  // QR Attendance Verification (Section 19 & 47)
+  // Legacy Registration ID / Roll Number Lookup Fallback
   const verifyAndCheckIn = (
-    eventId: string, 
-    qrToken: string, 
-    method: 'qr' | 'manual' = 'qr'
+    eventId: string,
+    qrToken: string,
+    method: 'qr' | 'manual' = 'manual'
   ): ScanVerificationResult => {
     const currentEvent = events.find(e => e._id === eventId);
     if (!currentEvent) {
       return { status: 'INVALID', message: 'Target event session is not active.' };
     }
 
-    // 1. Look up registration by token
     const tokenClean = qrToken.trim();
-    const reg = registrations.find(r => r.qrToken === tokenClean);
+    const reg = registrations.find(
+      r =>
+        r.qrToken === tokenClean ||
+        r._id === tokenClean ||
+        (r.eventId === eventId && r.userRollNumber.toLowerCase() === tokenClean.toLowerCase())
+    );
 
     if (!reg) {
-      return { status: 'INVALID', message: 'QR pass token is unrecognized or counterfeit.' };
+      return { status: 'INVALID', message: 'Registration ID or Roll Number not found for this event.' };
     }
 
-    // 2. Check if pass is for this specific event
     if (reg.eventId !== eventId) {
       const intendedEvent = events.find(e => e._id === reg.eventId);
-      return { 
-        status: 'WRONG_EVENT', 
-        message: `Pass mismatch! This pass was issued for "${intendedEvent?.title || 'Another Event'}", not "${currentEvent.title}".`,
+      return {
+        status: 'WRONG_EVENT',
+        message: `Registration mismatch! This registration belongs to "${intendedEvent?.title || 'Another Event'}", not "${currentEvent.title}".`,
         intendedEventTitle: intendedEvent?.title,
-        currentEventTitle: currentEvent.title
+        currentEventTitle: currentEvent.title,
       };
     }
 
@@ -1458,16 +1793,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       department: reg.userDepartment,
       role: 'student',
       interests: [],
-      profileImage: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80',
+      profileImage: '',
       createdAt: '',
       updatedAt: '',
     };
 
-    // 3. Duplicate check
     if (reg.checkedInAt) {
       return {
         status: 'DUPLICATE',
-        message: `Attendee ${reg.userName} (${reg.userRollNumber}) was already checked in.`,
+        message: `Participant ${reg.userName} (${reg.userRollNumber}) is already marked Present.`,
         registration: reg,
         event: currentEvent,
         attendee,
@@ -1475,38 +1809,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     }
 
-    // 4. Valid check-in: record attendance with duration & threshold tracking
+    const res = markRosterAttendance(eventId, reg._id, 'PRESENT');
+    if (!res.success) {
+      return { status: 'INVALID', message: res.error?.message || 'Could not mark attendance.' };
+    }
+
     const nowIso = new Date().toISOString();
-    const totalMinutes = getEventDurationMinutes(currentEvent);
-    const minPct = currentEvent.minParticipationPercent ?? 80;
-    const requiredMinutes = Math.ceil((totalMinutes * minPct) / 100);
-
-    const newRecord: AttendanceRecord = {
-      _id: `att-${Date.now()}`,
-      eventId,
-      registrationId: reg._id,
-      userId: reg.userId,
-      userName: reg.userName,
-      userRollNumber: reg.userRollNumber,
-      userDepartment: reg.userDepartment,
-      checkedInAt: nowIso,
-      checkedInBy: currentUser._id,
-      method,
-      participatedMinutes: totalMinutes,
-      requiredMinutes,
-      totalEventMinutes: totalMinutes,
-      participationPercent: 100,
-      sessionStatus: 'ACTIVE',
-      lastValidatedAt: nowIso,
-      eligibleForCertificate: true,
-    };
-
-    setRegistrations(prev => prev.map(r => r._id === reg._id ? { ...r, checkedInAt: nowIso } : r));
-    setAttendance(prev => [newRecord, ...prev]);
-
     return {
       status: 'SUCCESS',
-      message: `Verified: ${reg.userName} (${reg.userRollNumber}) marked present (${totalMinutes} min / 100% threshold eligible).`,
+      message: `Marked Present: ${reg.userName} (${reg.userRollNumber}).`,
       registration: { ...reg, checkedInAt: nowIso },
       event: currentEvent,
       attendee,
@@ -1786,6 +2097,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createEvent,
         updateEvent,
         verifyAndCheckIn,
+        markRosterAttendance,
+        markAllRosterPresent,
+        resetRosterAttendance,
         startAttendanceSession,
         closeAttendanceSession,
         updateParticipantParticipation,

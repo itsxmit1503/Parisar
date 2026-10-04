@@ -1,64 +1,118 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
-  QrCode,
+  UserCheck,
   Search,
   Download,
   CheckCircle2,
-  Clock,
-  Calendar,
-  MapPin
+  XCircle,
+  Lock,
+  MapPin,
+  ShieldAlert,
+  Award,
 } from 'lucide-react';
 import { useApp } from '../../context/AppContext';
 import { Button } from '../ui/Button';
-import { Badge, CategoryBadge } from '../ui/Badge';
+import { Badge } from '../ui/Badge';
 import { useToast } from '../ui/Toast';
 import { EmptyState } from '../ui/EmptyState';
 
 export const AdminAttendanceView: React.FC = () => {
-  const { events, registrations, attendance } = useApp();
+  const {
+    events,
+    registrations,
+    attendance,
+    markRosterAttendance,
+    closeAttendanceSession,
+    issueCertificatesForEvent,
+  } = useApp();
   const { showToast } = useToast();
 
-  const [selectedEventId, setSelectedEventId] = useState<string>('ALL');
+  const [selectedEventId, setSelectedEventId] = useState<string>(events[0]?._id || 'ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredAttendance = attendance.filter(att => {
-    if (selectedEventId !== 'ALL' && att.eventId !== selectedEventId) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const evtTitle = events.find(e => e._id === att.eventId)?.title.toLowerCase() || '';
+  const selectedEvent = events.find(e => e._id === selectedEventId);
+
+  const eventRoster = useMemo(() => {
+    const baseRegs =
+      selectedEventId === 'ALL'
+        ? registrations.filter(r => r.status === 'CONFIRMED')
+        : registrations.filter(r => r.eventId === selectedEventId && r.status === 'CONFIRMED');
+
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return baseRegs;
+
+    return baseRegs.filter(r => {
+      const evtTitle = events.find(e => e._id === r.eventId)?.title.toLowerCase() || '';
       return (
-        att.userName.toLowerCase().includes(q) ||
-        att.userRollNumber.toLowerCase().includes(q) ||
-        att.userDepartment.toLowerCase().includes(q) ||
+        r.userName.toLowerCase().includes(q) ||
+        r.userRollNumber.toLowerCase().includes(q) ||
+        r.userEmail.toLowerCase().includes(q) ||
+        r.userDepartment.toLowerCase().includes(q) ||
         evtTitle.includes(q)
       );
-    }
-    return true;
-  });
+    });
+  }, [registrations, selectedEventId, searchQuery, events]);
 
-  const totalConfirmedRegs =
-    selectedEventId === 'ALL'
-      ? registrations.filter(r => r.status === 'CONFIRMED').length
-      : registrations.filter(r => r.eventId === selectedEventId && r.status === 'CONFIRMED').length;
+  const presentCount = useMemo(() => {
+    return eventRoster.filter(r => {
+      const att = attendance.find(
+        a => a.eventId === r.eventId && (a.registrationId === r._id || a.userId === r.userId)
+      );
+      return Boolean(att && att.status !== 'ABSENT');
+    }).length;
+  }, [eventRoster, attendance]);
 
   const turnoutPercent =
-    totalConfirmedRegs > 0
-      ? Math.round((filteredAttendance.length / totalConfirmedRegs) * 100)
-      : 0;
+    eventRoster.length > 0 ? Math.round((presentCount / eventRoster.length) * 100) : 0;
+
+  const handleAdminOverride = (
+    eventId: string,
+    registrationId: string,
+    status: 'PRESENT' | 'ABSENT',
+    studentName: string
+  ) => {
+    const res = markRosterAttendance(eventId, registrationId, status);
+    if (res.success) {
+      showToast(
+        'success',
+        `Admin Override: ${studentName} marked ${
+          status === 'PRESENT' ? 'Present' : 'Absent'
+        }. Action recorded in Audit Log.`,
+        'Administrative Override'
+      );
+    } else {
+      showToast('error', res.error?.message || 'Override failed.');
+    }
+  };
 
   const handleExportAttendance = () => {
-    const headers = ['Event Title', 'Student Name', 'Roll Number', 'Department', 'Check-in Timestamp', 'Verification Method'];
-    const rows = filteredAttendance.map(a => {
-      const evt = events.find(e => e._id === a.eventId);
+    const headers = [
+      'Event Title',
+      'Event Mode',
+      'Student Name',
+      'Roll Number',
+      'Department',
+      'Attendance Status',
+      'Verification Method',
+      'Timestamp',
+    ];
+    const rows = eventRoster.map(r => {
+      const evt = events.find(e => e._id === r.eventId);
+      const att = attendance.find(
+        a => a.eventId === r.eventId && (a.registrationId === r._id || a.userId === r.userId)
+      );
+      const isPresent = Boolean(att && att.status !== 'ABSENT');
       return [
-        `"${evt?.title || a.eventId}"`,
-        `"${a.userName}"`,
-        `"${a.userRollNumber}"`,
-        `"${a.userDepartment}"`,
-        `"${a.checkedInAt}"`,
-        `"${a.method.toUpperCase()}"`,
+        `"${evt?.title || r.eventId}"`,
+        `"${evt?.eventMode || 'OFFLINE'}"`,
+        `"${r.userName}"`,
+        `"${r.userRollNumber}"`,
+        `"${r.userDepartment}"`,
+        isPresent ? 'PRESENT' : 'ABSENT',
+        `"${(att?.method || (isPresent ? 'roster' : 'unmarked')).toUpperCase()}"`,
+        `"${att?.checkedInAt || 'Not Marked'}"`,
       ];
     });
 
@@ -82,48 +136,95 @@ export const AdminAttendanceView: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#B9B4AA] pb-4">
         <div>
           <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#B6533C] mb-1">
-            DHSGSU Administrative Oversight
+            DHSGSU Administrative Oversight &amp; Audited Override
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-[#18212B] tracking-tight">
-            University Attendance Overview
+            University Attendance &amp; Certificate Governance
           </h1>
           <p className="text-xs text-[#62605B] mt-0.5">
-            Real-time turnstile check-in records and participation verification across all campus venues.
+            Inspect offline roster attendance and online session duration logs. University Administrators can perform audited overrides on finalized events.
           </p>
         </div>
 
-        <Button
-          variant="secondary"
-          size="sm"
-          leftIcon={<Download className="w-3.5 h-3.5" />}
-          onClick={handleExportAttendance}
-        >
-          Export Attendance CSV
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {selectedEvent && (
+            <>
+              {selectedEvent.attendanceSessionStatus !== 'FINALIZED' &&
+                selectedEvent.attendanceSessionStatus !== 'CLOSED' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    leftIcon={<Lock className="w-3.5 h-3.5 text-[#B6533C]" />}
+                    onClick={() => {
+                      closeAttendanceSession(selectedEvent._id);
+                      showToast(
+                        'success',
+                        `Attendance finalized for "${selectedEvent.title}".`
+                      );
+                    }}
+                  >
+                    Finalize Event Attendance
+                  </Button>
+                )}
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Award className="w-3.5 h-3.5 text-[#2E6B4E]" />}
+                onClick={() => {
+                  const res = issueCertificatesForEvent(selectedEvent._id);
+                  if (res.success) {
+                    showToast('success', `Issued ${res.data} verified certificates.`);
+                  } else {
+                    showToast('warning', res.error?.message || 'No new certificates issued.');
+                  }
+                }}
+              >
+                Issue Verified Certificates
+              </Button>
+            </>
+          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Download className="w-3.5 h-3.5" />}
+            onClick={handleExportAttendance}
+          >
+            Export Attendance CSV
+          </Button>
+        </div>
       </div>
 
       {/* Metrics Strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-4 shadow-[2px_2px_0_0_#18212B]">
           <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">
-            Total Verified Check-Ins
-          </div>
-          <div className="text-2xl font-mono font-extrabold text-[#2F613B] mt-1">
-            {filteredAttendance.length}
-          </div>
-        </div>
-
-        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-4 shadow-[2px_2px_0_0_#18212B]">
-          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">
-            Confirmed Registrations Pool
+            Confirmed Roster
           </div>
           <div className="text-2xl font-mono font-extrabold text-[#18212B] mt-1">
-            {totalConfirmedRegs}
+            {eventRoster.length}
           </div>
         </div>
 
         <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-4 shadow-[2px_2px_0_0_#18212B]">
-          <div className="text-[10px] font-mono font-bold uppercase text-[#62605B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#2F613B]">
+            Verified Present
+          </div>
+          <div className="text-2xl font-mono font-extrabold text-[#2F613B] mt-1">
+            {presentCount}
+          </div>
+        </div>
+
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-4 shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#A83226]">
+            Absent / Unmarked
+          </div>
+          <div className="text-2xl font-mono font-extrabold text-[#A83226] mt-1">
+            {Math.max(0, eventRoster.length - presentCount)}
+          </div>
+        </div>
+
+        <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] p-4 shadow-[2px_2px_0_0_#18212B]">
+          <div className="text-[10px] font-mono font-bold uppercase text-[#B6533C]">
             Verified Turnout Ratio
           </div>
           <div className="text-2xl font-mono font-extrabold text-[#B6533C] mt-1">
@@ -138,7 +239,7 @@ export const AdminAttendanceView: React.FC = () => {
           <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#62605B]" />
           <input
             type="text"
-            placeholder="Search by student name, roll number, department, or event..."
+            placeholder="Search by student name, roll number, email, department, or event..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             className="w-full pl-8 pr-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-medium text-[#18212B] placeholder-[#62605B] focus:outline-none focus:border-[#18212B]"
@@ -150,68 +251,139 @@ export const AdminAttendanceView: React.FC = () => {
           <select
             value={selectedEventId}
             onChange={e => setSelectedEventId(e.target.value)}
-            className="px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-bold text-[#18212B] focus:outline-none focus:border-[#18212B] max-w-[260px] truncate"
+            className="px-3 py-1.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[2px] text-xs font-bold text-[#18212B] focus:outline-none focus:border-[#18212B] max-w-[300px] truncate"
           >
-            <option value="ALL">All Campus Events ({attendance.length})</option>
+            <option value="ALL">All Campus Events ({registrations.length})</option>
             {events.map(e => (
               <option key={e._id} value={e._id}>
-                {e.title}
+                {e.title} ({e.attendanceSessionStatus || 'NOT_STARTED'})
               </option>
             ))}
           </select>
         </div>
       </div>
 
-      {/* Attendance Table */}
-      {filteredAttendance.length > 0 ? (
+      {/* Selected Event Finalization Banner */}
+      {selectedEvent && (
+        <div className="p-3.5 bg-[#EAE5DB]/80 border border-[#B9B4AA] rounded-[3px] flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-[#B6533C]" />
+            <span>
+              <strong>{selectedEvent.title}</strong> • Mode:{' '}
+              <strong>{selectedEvent.eventMode || 'OFFLINE'}</strong> • Session Status:{' '}
+              <strong>{selectedEvent.attendanceSessionStatus || 'NOT_STARTED'}</strong>
+            </span>
+          </div>
+          {(selectedEvent.attendanceSessionStatus === 'FINALIZED' ||
+            selectedEvent.attendanceSessionStatus === 'CLOSED') && (
+            <Badge variant="warning">
+              Finalized (Organizer Locked — Admin Override Permitted)
+            </Badge>
+          )}
+        </div>
+      )}
+
+      {/* Attendance Roster & Override Table */}
+      {eventRoster.length > 0 ? (
         <div className="bg-[#FCFAF5] border border-[#B9B4AA] rounded-[3px] overflow-hidden shadow-[2px_2px_0_0_#18212B] overflow-x-auto">
-          <table className="w-full text-left text-xs min-w-[640px]">
+          <table className="w-full text-left text-xs min-w-[760px]">
             <thead className="bg-[#EAE5DB] border-b border-[#B9B4AA] text-[#18212B] font-mono text-[10px] uppercase tracking-wider">
               <tr>
                 <th className="py-3 px-4 font-bold">Student Participant</th>
                 <th className="py-3 px-4 font-bold">Roll Number</th>
-                <th className="py-3 px-4 font-bold">Event & Venue</th>
-                <th className="py-3 px-4 font-bold">Check-In Time</th>
-                <th className="py-3 px-4 text-right font-bold">Verification Method</th>
+                <th className="py-3 px-4 font-bold">Event &amp; Venue</th>
+                <th className="py-3 px-4 font-bold">Verification Method &amp; Duration</th>
+                <th className="py-3 px-4 text-right font-bold">Admin Roster Control</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#B9B4AA]/60">
-              {filteredAttendance.map(att => {
-                const evt = events.find(e => e._id === att.eventId);
+              {eventRoster.map(reg => {
+                const evt = events.find(e => e._id === reg.eventId);
+                const att = attendance.find(
+                  a =>
+                    a.eventId === reg.eventId &&
+                    (a.registrationId === reg._id || a.userId === reg.userId)
+                );
+                const isPresent = Boolean(att && att.status !== 'ABSENT');
+
                 return (
-                  <tr key={att._id} className="hover:bg-[#EAE5DB]/40 transition-colors">
+                  <tr key={reg._id} className="hover:bg-[#EAE5DB]/40 transition-colors">
                     <td className="py-3 px-4">
-                      <div className="font-bold text-[#18212B]">{att.userName}</div>
-                      <div className="text-[11px] text-[#62605B]">{att.userDepartment}</div>
+                      <div className="font-bold text-[#18212B]">{reg.userName}</div>
+                      <div className="text-[11px] text-[#62605B]">{reg.userDepartment}</div>
                     </td>
                     <td className="py-3 px-4 font-mono font-bold text-[#18212B]">
-                      {att.userRollNumber}
+                      {reg.userRollNumber}
                     </td>
                     <td className="py-3 px-4">
                       <div className="font-bold text-[#18212B] line-clamp-1">
-                        {evt?.title || att.eventId}
+                        {evt?.title || reg.eventId}
                       </div>
                       <div className="text-[11px] text-[#62605B] flex items-center gap-1 mt-0.5">
                         <MapPin className="w-3 h-3 text-[#B6533C]" />
                         <span>{evt?.venue || 'Campus Venue'}</span>
                       </div>
                     </td>
-                    <td className="py-3 px-4 font-mono text-[#18212B]">
-                      {new Date(att.checkedInAt).toLocaleDateString([], {
-                        month: 'short',
-                        day: 'numeric',
-                      })}{' '}
-                      •{' '}
-                      {new Date(att.checkedInAt).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
+                    <td className="py-3 px-4">
+                      {isPresent && att ? (
+                        <div className="space-y-0.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-[2px] bg-[#EBF3ED] text-[#2F613B] border border-[#B8D5C0]">
+                            <CheckCircle2 className="w-3 h-3" />
+                            {att.method === 'admin_override'
+                              ? 'Admin Override'
+                              : att.method === 'online_session'
+                              ? `Online Session (${att.participationPercent ?? 100}%)`
+                              : 'Offline Roster'}
+                          </span>
+                          <div className="text-[10px] font-mono text-[#62605B]">
+                            {new Date(att.checkedInAt).toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase px-2 py-0.5 rounded-[2px] bg-[#EAE5DB] text-[#62605B] border border-[#B9B4AA]">
+                          Absent / Unmarked
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded-[2px] bg-[#EBF3ED] text-[#2F613B] border border-[#B8D5C0]">
-                        <CheckCircle2 className="w-3 h-3" />
-                        {att.method === 'qr' ? 'Optical QR Scan' : 'Manual Override'}
-                      </span>
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdminOverride(
+                              reg.eventId,
+                              reg._id,
+                              'PRESENT',
+                              reg.userName
+                            )
+                          }
+                          className={`px-2.5 py-1 rounded text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer ${
+                            isPresent
+                              ? 'bg-[#2F613B] text-white'
+                              : 'bg-[#EAE5DB] text-[#18212B] hover:bg-[#2F613B] hover:text-white'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3 h-3" /> Present
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleAdminOverride(
+                              reg.eventId,
+                              reg._id,
+                              'ABSENT',
+                              reg.userName
+                            )
+                          }
+                          className={`px-2.5 py-1 rounded text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer ${
+                            !isPresent
+                              ? 'bg-[#A83226] text-white'
+                              : 'bg-[#EAE5DB] text-[#62605B] hover:bg-[#A83226] hover:text-white'
+                          }`}
+                        >
+                          <XCircle className="w-3 h-3" /> Absent
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -221,9 +393,9 @@ export const AdminAttendanceView: React.FC = () => {
         </div>
       ) : (
         <EmptyState
-          icon={QrCode}
-          title="No attendance records match your filter"
-          description="Checked-in participants will appear here automatically as organizers scan student QR passes at the venue entrance."
+          icon={UserCheck}
+          title="No roster records match your filter"
+          description="Select an event or clear your search query to inspect participant attendance."
         />
       )}
     </div>

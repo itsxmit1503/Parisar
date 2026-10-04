@@ -70,9 +70,14 @@ const PATH_TO_TAB_MAP: Record<string, ActiveTab> = {
   '/organizer/profile': 'organizer-profile',
   '/admin': 'admin-dashboard',
   '/admin/organizer-requests': 'admin-organizer-requests',
+  '/admin/organizers': 'admin-organizer-requests',
   '/admin/events': 'admin-moderation',
   '/admin/participants': 'admin-participants',
+  '/admin/users': 'admin-users',
   '/admin/attendance': 'admin-attendance',
+  '/admin/certificates': 'admin-attendance',
+  '/admin/venues': 'admin-venues',
+  '/admin/audit': 'admin-audit',
   '/admin/settings': 'admin-venues',
 };
 

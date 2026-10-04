@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Badge, CategoryBadge } from '../ui/Badge';
 import { Button } from '../ui/Button';
+import { UserAvatar } from '../ui/UserAvatar';
 
 interface EventPassportProps {
   onViewCertificates: () => void;
@@ -66,10 +67,11 @@ export const EventPassport: React.FC<EventPassportProps> = ({
       <div className="bg-[#FCFAF5] border-2 border-[#18212B] rounded-[4px] p-6 sm:p-8 shadow-[3px_3px_0_0_#18212B]">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 pb-6 border-b border-[#B9B4AA]">
           <div className="flex items-center gap-4">
-            <img
-              src={currentUser.profileImage}
-              alt={currentUser.name}
-              className="w-16 h-16 rounded-[3px] border-2 border-[#18212B] shadow-[2px_2px_0_0_#18212B] object-cover"
+            <UserAvatar
+              name={currentUser.name}
+              profileImage={currentUser.profileImage}
+              size="lg"
+              className="border-2 border-[#18212B] shadow-[2px_2px_0_0_#18212B]"
             />
             <div>
               <div className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#B08A4A]">
