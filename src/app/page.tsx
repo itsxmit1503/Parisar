@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from '../context/AppContext';
 import { ToastProvider } from '../components/ui/Toast';
-import { DevToolbar } from '../components/layout/DevToolbar';
 import { Navbar, ActiveTab } from '../components/layout/Navbar';
 import { Footer } from '../components/layout/Footer';
 
@@ -40,6 +39,7 @@ import { EventModeration } from '../components/admin/EventModeration';
 import { VenueCategorySettings } from '../components/admin/VenueCategorySettings';
 import { AuditLogView } from '../components/admin/AuditLogView';
 import { AdminAttendanceView } from '../components/admin/AdminAttendanceView';
+import { AdministratorManagement } from '../components/admin/AdministratorManagement';
 
 // Shared Authenticated Profile View (Organizer & Admin)
 import { RoleProfileView } from '../components/profile/RoleProfileView';
@@ -76,6 +76,7 @@ const PATH_TO_TAB_MAP: Record<string, ActiveTab> = {
   '/admin/users': 'admin-users',
   '/admin/attendance': 'admin-attendance',
   '/admin/certificates': 'admin-attendance',
+  '/admin/administrators': 'admin-administrators',
   '/admin/venues': 'admin-venues',
   '/admin/audit': 'admin-audit',
   '/admin/settings': 'admin-venues',
@@ -220,9 +221,6 @@ export function MainApp({ initialTab = 'landing' }: MainAppProps) {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F4F0E8] text-[#18212B] font-sans antialiased selection:bg-[#B6533C] selection:text-white">
-      {/* Developer-only toolbar (hidden in normal product UI unless ?dev=true or Ctrl+Shift+D) */}
-      <DevToolbar activeTab={effectiveTab} setActiveTab={setActiveTab} />
-
       {/* Universal PARISAR Navigation Bar */}
       <Navbar 
         activeTab={effectiveTab} 
@@ -452,6 +450,7 @@ export function MainApp({ initialTab = 'landing' }: MainAppProps) {
             onNavigateToVenues={() => setActiveTab('admin-venues')}
             onNavigateToUsers={() => setActiveTab('admin-users')}
             onNavigateToAudit={() => setActiveTab('admin-audit')}
+            onNavigateToAdministrators={() => setActiveTab('admin-administrators')}
           />
         )}
 
@@ -469,6 +468,10 @@ export function MainApp({ initialTab = 'landing' }: MainAppProps) {
 
         {effectiveTab === 'admin-attendance' && (
           <AdminAttendanceView />
+        )}
+
+        {effectiveTab === 'admin-administrators' && (
+          <AdministratorManagement />
         )}
 
         {effectiveTab === 'admin-venues' && (

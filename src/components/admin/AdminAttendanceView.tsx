@@ -23,7 +23,7 @@ export const AdminAttendanceView: React.FC = () => {
     events,
     registrations,
     attendance,
-    markRosterAttendance,
+    adminCorrectAttendance,
     closeAttendanceSession,
     issueCertificatesForEvent,
   } = useApp();
@@ -67,19 +67,24 @@ export const AdminAttendanceView: React.FC = () => {
   const turnoutPercent =
     eventRoster.length > 0 ? Math.round((presentCount / eventRoster.length) * 100) : 0;
 
-  const handleAdminOverride = (
+  const handleAdminOverride = async (
     eventId: string,
     registrationId: string,
     status: 'PRESENT' | 'ABSENT',
     studentName: string
   ) => {
-    const res = markRosterAttendance(eventId, registrationId, status);
+    const res = await adminCorrectAttendance(
+      eventId,
+      registrationId,
+      status,
+      'Audited Administrative Attendance Correction by DSW'
+    );
     if (res.success) {
       showToast(
         'success',
         `Admin Override: ${studentName} marked ${
           status === 'PRESENT' ? 'Present' : 'Absent'
-        }. Action recorded in Audit Log.`,
+        }. Action recorded in Audit Log (ATTENDANCE_CORRECTED).`,
         'Administrative Override'
       );
     } else {

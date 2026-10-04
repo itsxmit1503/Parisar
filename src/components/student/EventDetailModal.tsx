@@ -45,10 +45,35 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
     venues,
     registerForEvent,
     cancelRegistration,
-    joinOrValidateOnlineAttendance,
+    joinOnlineEventSession,
+    triggerOnlineCheckpoint,
+    verifyOnlineCheckpoint,
   } = useApp();
   const { showToast } = useToast();
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isCheckpointBusy, setIsCheckpointBusy] = useState(false);
+  const [activeCheckpoint, setActiveCheckpoint] = useState<{
+    checkpointId: string;
+    checkpointNumber: number;
+    expiresAt: string;
+  } | null>(null);
+  const [checkpointSecondsLeft, setCheckpointSecondsLeft] = useState<number>(0);
+
+  // Live 2-minute countdown timer for active online checkpoint
+  React.useEffect(() => {
+    if (!activeCheckpoint) {
+      setCheckpointSecondsLeft(0);
+      return;
+    }
+    const updateTimer = () => {
+      const expiresMs = new Date(activeCheckpoint.expiresAt).getTime();
+      const diffSec = Math.max(0, Math.ceil((expiresMs - Date.now()) / 1000));
+      setCheckpointSecondsLeft(diffSec);
+    };
+    updateTimer();
+    const interval = setInterval(updateTimer, 500);
+    return () => clearInterval(interval);
+  }, [activeCheckpoint]);
 
   if (!event) return null;
 
@@ -88,6 +113,10 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
     event.attendanceSessionStatus === 'ACTIVE' ||
     event.status === 'ONGOING';
 
+  const requiredCheckpoints = event.onlinePolicy?.requiredCheckpoints ?? 2;
+  const totalCheckpoints = event.onlinePolicy?.totalCheckpoints ?? 3;
+  const verifiedCheckpointsCount = userAttendance?.verifiedCheckpoints?.length ?? 0;
+
   const handleRegister = async () => {
     setIsRegistering(true);
 
@@ -121,18 +150,63 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
     }
   };
 
-  const handleValidateSessionAttendance = (addMins = 60, leaveSession = false) => {
-    const res = joinOrValidateOnlineAttendance(event._id, addMins, leaveSession);
+  const handleJoinOnlineEvent = async () => {
+    setIsCheckpointBusy(true);
+    const res = await joinOnlineEventSession(event._id);
     if (res.success) {
       showToast(
         'success',
-        leaveSession
-          ? `Online session ended. Final verified duration: ${res.data.participatedMinutes}/${res.data.totalEventMinutes} min (${res.data.participationPercent}%).`
-          : `Online session active: ${res.data.participatedMinutes}/${res.data.totalEventMinutes} min (${res.data.participationPercent}%).`,
-        leaveSession ? 'Left Online Event' : 'Online Session Verified'
+        'Initial Check-In recorded! Complete 2-minute participation checkpoints during the session.',
+        'Joined Online Session'
+      );
+      // Automatically activate first 2-minute checkpoint if none active
+      const cpRes = await triggerOnlineCheckpoint(event._id);
+      if (cpRes.success) {
+        setActiveCheckpoint({
+          checkpointId: cpRes.data.checkpointId || cpRes.data.id,
+          checkpointNumber: cpRes.data.checkpointNumber,
+          expiresAt: cpRes.data.expiresAt,
+        });
+      }
+    } else {
+      showToast('error', res.error.message, 'Cannot Join Session');
+    }
+    setIsCheckpointBusy(false);
+  };
+
+  const handleTriggerNextCheckpoint = async () => {
+    setIsCheckpointBusy(true);
+    const cpRes = await triggerOnlineCheckpoint(event._id);
+    setIsCheckpointBusy(false);
+    if (cpRes.success) {
+      setActiveCheckpoint({
+        checkpointId: cpRes.data.checkpointId || cpRes.data.id,
+        checkpointNumber: cpRes.data.checkpointNumber,
+        expiresAt: cpRes.data.expiresAt,
+      });
+      showToast(
+        'info',
+        `Checkpoint #${cpRes.data.checkpointNumber} activated! Confirm participation within 2 minutes.`,
+        '2-Minute Checkpoint Active'
       );
     } else {
-      showToast('error', res.error.message, 'Attendance Error');
+      showToast('error', cpRes.error.message, 'Checkpoint Error');
+    }
+  };
+
+  const handleConfirmCheckpoint = async () => {
+    setIsCheckpointBusy(true);
+    const res = await verifyOnlineCheckpoint(event._id, activeCheckpoint?.checkpointId);
+    setIsCheckpointBusy(false);
+    if (res.success) {
+      setActiveCheckpoint(null);
+      showToast(
+        'success',
+        `Participation confirmed (${res.data.verifiedCheckpointsCount}/${res.data.requiredCheckpoints} required checkpoints verified).`,
+        'Checkpoint Verified ✓'
+      );
+    } else {
+      showToast('error', res.error.message, 'Verification Expired');
     }
   };
 
@@ -352,71 +426,69 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                 <Radio className={`w-4 h-4 text-[#2F613B] ${isSessionActive ? 'animate-pulse' : ''}`} />
                 <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#2F613B]">
                   {eventMode === 'OFFLINE'
-                    ? 'Offline Venue Roster Attendance'
+                    ? 'Offline Event — Dynamic 60s Student QR Attendance'
                     : isSessionActive
                     ? `Live Online Session Open (${eventMode})`
-                    : `Online Session Attendance (${eventMode})`}
+                    : `Online Session Checkpoints (${eventMode})`}
                 </span>
               </div>
               <span className="text-xs font-mono font-bold text-[#18212B]">
-                {userAttendance
-                  ? `${userAttendance.participatedMinutes ?? durationMinutes}/${durationMinutes} min (${userAttendance.participationPercent ?? 100}%)`
-                  : eventMode === 'OFFLINE'
-                  ? 'Pending Roster Check'
-                  : `0/${durationMinutes} min (0%)`}
+                {eventMode === 'OFFLINE'
+                  ? userAttendance
+                    ? 'PRESENT ✓'
+                    : 'Awaiting QR Scan'
+                  : `Checkpoints: ${verifiedCheckpointsCount} / ${requiredCheckpoints} Required`}
               </span>
             </div>
 
             {eventMode === 'OFFLINE' ? (
-              <div className="text-xs text-[#18212B] leading-relaxed space-y-1.5">
+              <div className="text-xs text-[#18212B] leading-relaxed space-y-2">
                 <p>
-                  This is a physical campus event at <strong>{event.venue}</strong>. The event organizer marks attendance directly from the official registered student roster using your Name and Roll Number (<strong>{userRegistration?.userRollNumber}</strong>).
+                  This is a physical campus event at <strong>{event.venue}</strong>. Open your registration pass and click <strong>Submit Attendance</strong> to generate a temporary 60-second one-time QR code for the organizer to scan.
                 </p>
-                <div className="flex items-center justify-between pt-1 font-mono text-[11px]">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 font-mono text-[11px]">
                   <span>
                     Status:{' '}
                     <strong className={userAttendance ? 'text-[#2F613B]' : 'text-[#B26B16]'}>
-                      {userAttendance ? 'PRESENT (VERIFIED ON ROSTER)' : 'REGISTERED — AWAITING ROSTER MARK'}
+                      {userAttendance ? 'PRESENT (VERIFIED BY ORGANIZER SCAN)' : 'REGISTERED — READY TO SUBMIT ATTENDANCE'}
                     </strong>
                   </span>
-                  <span>
-                    Certificate Eligibility:{' '}
-                    <strong>{userAttendance ? 'ELIGIBLE ✓' : 'REQUIRES PRESENT MARK'}</strong>
-                  </span>
+                  {!userAttendance && userRegistration && onViewPass && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      leftIcon={<Ticket className="w-3.5 h-3.5" />}
+                      onClick={() => onViewPass(userRegistration)}
+                    >
+                      Submit Attendance (60s QR)
+                    </Button>
+                  )}
                 </div>
               </div>
             ) : (
               <>
                 <p className="text-xs text-[#18212B] leading-relaxed">
-                  Join the authenticated online event session below. The server tracks your session timestamps (`joinedAt` → `leftAt`) and verified participation duration. Certificate eligibility requires <strong>{minPct}% ({requiredMinutes} mins)</strong> of the {durationMinutes}-minute session.
+                  <strong>Online Attendance Policy (No QR):</strong> Complete Initial Check-In (<strong>Join Event</strong>) and confirm at least <strong>{requiredCheckpoints} of {totalCheckpoints}</strong> random 2-minute participation checkpoints during the session to earn certificate eligibility.
                 </p>
 
                 {userAttendance && (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 rounded bg-[#FCFAF5] border border-[#B9B4AA] text-[11px] font-mono">
                     <div>
-                      <span className="text-[#62605B] block">Joined</span>
-                      <strong className="text-[#18212B]">
-                        {new Date(userAttendance.checkedInAt).toLocaleTimeString('en-IN', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                      <span className="text-[#62605B] block">Initial Check-In</span>
+                      <strong className="text-[#2F613B]">
+                        {userAttendance.initialCheckInDone !== false ? 'VERIFIED ✓' : 'PENDING'}
                       </strong>
                     </div>
                     <div>
-                      <span className="text-[#62605B] block">Left / Status</span>
+                      <span className="text-[#62605B] block">Checkpoints</span>
                       <strong className="text-[#18212B]">
-                        {userAttendance.checkedOutAt
-                          ? new Date(userAttendance.checkedOutAt).toLocaleTimeString('en-IN', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : userAttendance.sessionStatus || 'ACTIVE'}
+                        {verifiedCheckpointsCount} of {requiredCheckpoints} Required
                       </strong>
                     </div>
                     <div>
-                      <span className="text-[#62605B] block">Verified Duration</span>
+                      <span className="text-[#62605B] block">Participation</span>
                       <strong className="text-[#18212B]">
-                        {userAttendance.participatedMinutes ?? 0} / {requiredMinutes} mins
+                        {userAttendance.participationPercent ?? 0}%
                       </strong>
                     </div>
                     <div>
@@ -428,51 +500,73 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                             : 'text-[#A83226]'
                         }
                       >
-                        {userAttendance.eligibleForCertificate ? 'ELIGIBLE ✓' : 'NOT ELIGIBLE'}
+                        {userAttendance.eligibleForCertificate ? 'ELIGIBLE ✓' : 'INCOMPLETE'}
                       </strong>
                     </div>
                   </div>
                 )}
 
-                {isSessionActive && (
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <div className="text-[11px] font-mono font-bold text-[#2F613B]">
-                      {userAttendance?.eligibleForCertificate
-                        ? '✓ Minimum Duration Threshold Reached (Eligible for Certificate)'
-                        : `Required: ${requiredMinutes} mins (${minPct}% of ${durationMinutes} mins)`}
+                {/* Active 2-Minute Checkpoint Prompt (Section 17) */}
+                {activeCheckpoint && checkpointSecondsLeft > 0 && (
+                  <div className="p-4 bg-[#FCFAF5] border-2 border-[#18212B] rounded-[4px] shadow-[3px_3px_0_0_#B6533C] space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold uppercase tracking-wider text-[#B6533C]">
+                        Attendance Verification (Checkpoint #{activeCheckpoint.checkpointNumber})
+                      </span>
+                      <span className="px-2 py-0.5 bg-[#18212B] text-[#FCFAF5] font-mono text-[11px] font-bold rounded-[2px]">
+                        Expires in {Math.floor(checkpointSecondsLeft / 60)}:
+                        {String(checkpointSecondsLeft % 60).padStart(2, '0')}
+                      </span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {!userAttendance ? (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => handleValidateSessionAttendance(75, false)}
-                        >
-                          JOIN EVENT
-                        </Button>
-                      ) : (
-                        <>
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => handleValidateSessionAttendance(75, false)}
-                          >
-                            Continue Session (+75m Verified)
-                          </Button>
-                          {userAttendance.sessionStatus !== 'COMPLETED' && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => handleValidateSessionAttendance(0, true)}
-                            >
-                              Leave Event
-                            </Button>
-                          )}
-                        </>
-                      )}
-                    </div>
+                    <p className="text-xs font-semibold text-[#18212B]">
+                      Please confirm your participation. This verification expires in 2 minutes.
+                    </p>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      isLoading={isCheckpointBusy}
+                      leftIcon={<CheckCircle2 className="w-4 h-4" />}
+                      onClick={handleConfirmCheckpoint}
+                    >
+                      Confirm Participation
+                    </Button>
                   </div>
                 )}
+
+                {activeCheckpoint && checkpointSecondsLeft === 0 && (
+                  <div className="p-3 bg-[#FDF0EE] border border-[#A83226] rounded-[3px] text-xs font-bold text-[#A83226]">
+                    This verification checkpoint has expired (2-minute window elapsed).
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="text-[11px] font-mono font-bold text-[#2F613B]">
+                    {userAttendance?.eligibleForCertificate
+                      ? `✓ Required Checkpoints Completed (${verifiedCheckpointsCount}/${requiredCheckpoints}) — Eligible for Certificate`
+                      : `Complete ${requiredCheckpoints} of ${totalCheckpoints} 2-minute checkpoints`}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!userAttendance ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        isLoading={isCheckpointBusy}
+                        onClick={handleJoinOnlineEvent}
+                      >
+                        Join Event (Initial Check-In)
+                      </Button>
+                    ) : (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        isLoading={isCheckpointBusy}
+                        onClick={handleTriggerNextCheckpoint}
+                      >
+                        Trigger Next 2-Min Checkpoint
+                      </Button>
+                    )}
+                  </div>
+                </div>
               </>
             )}
           </div>

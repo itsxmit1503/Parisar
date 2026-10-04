@@ -50,12 +50,13 @@ export const AuthView: React.FC<AuthViewProps> = ({
 }) => {
   const {
     loginWithCredentials,
+    activateAdminInvitation,
     registerStudentAccount,
     registerOrganizerAccount,
   } = useApp();
   const { showToast } = useToast();
 
-  const [mode, setMode] = useState<'login' | 'signup' | 'admin-login' | 'forgot-password'>(initialMode);
+  const [mode, setMode] = useState<'login' | 'signup' | 'admin-login' | 'admin-activate' | 'forgot-password'>(initialMode);
   const [signupRole, setSignupRole] = useState<'student' | 'organizer'>('student');
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -65,6 +66,12 @@ export const AuthView: React.FC<AuthViewProps> = ({
   // Login Form Fields
   const [loginIdentifier, setLoginIdentifier] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+
+  // Admin Invitation Activation Fields
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteToken, setInviteToken] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [inviteConfirmPassword, setInviteConfirmPassword] = useState('');
 
   // Signup Form Fields
   const [fullName, setFullName] = useState('');
@@ -84,7 +91,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     setResetSent(false);
   };
 
-  const handleSwitchMode = (newMode: 'login' | 'signup' | 'admin-login' | 'forgot-password') => {
+  const handleSwitchMode = (newMode: 'login' | 'signup' | 'admin-login' | 'admin-activate' | 'forgot-password') => {
     clearErrors();
     setMode(newMode);
   };
@@ -128,6 +135,35 @@ export const AuthView: React.FC<AuthViewProps> = ({
     } catch {
       setIsLoading(false);
       setErrorMsg('Account not found. Check your email or roll number.');
+    }
+  };
+
+  const handleActivateAdminInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearErrors();
+
+    if (!inviteEmail.trim() || !inviteToken.trim() || !invitePassword) {
+      setErrorMsg('Institutional Email, One-Time Invitation Token, and Password are required.');
+      return;
+    }
+    if (invitePassword.length < 8) {
+      setErrorMsg('Administrator password must be at least 8 characters long.');
+      return;
+    }
+    if (invitePassword !== inviteConfirmPassword) {
+      setErrorMsg('Passwords do not match.');
+      return;
+    }
+
+    setIsLoading(true);
+    const res = await activateAdminInvitation(inviteEmail, inviteToken, invitePassword);
+    setIsLoading(false);
+
+    if (res.success) {
+      showToast('success', `Administrator account activated for ${res.data.name}.`, 'Admin Account Active');
+      onSuccess(res.data);
+    } else {
+      setErrorMsg(res.error.message);
     }
   };
 
@@ -212,7 +248,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
     }
   };
 
-  const handleForgotPassword = (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     clearErrors();
     if (!loginIdentifier.trim()) {
@@ -220,11 +256,25 @@ export const AuthView: React.FC<AuthViewProps> = ({
       return;
     }
     setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      setResetSent(true);
-      showToast('info', `Password recovery link dispatched to university directory record for ${loginIdentifier}.`, 'Recovery Dispatched');
-    }, 350);
+    try {
+      await fetch('/api/v1/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'forgot-password',
+          identifier: loginIdentifier.trim(),
+        }),
+      });
+    } catch {
+      // Anti-enumeration: always show uniform response
+    }
+    setIsLoading(false);
+    setResetSent(true);
+    showToast(
+      'info',
+      'If an account exists for this email, password recovery instructions have been sent.',
+      'Recovery Instructions Sent'
+    );
   };
 
   const fillCredential = (id: string, isAdmin = false) => {
@@ -270,13 +320,15 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 {mode === 'login' && 'Welcome back to PARISAR'}
                 {mode === 'signup' && 'Create your PARISAR account'}
                 {mode === 'admin-login' && 'PARISAR — University Administration'}
+                {mode === 'admin-activate' && 'Activate Administrator Invitation'}
                 {mode === 'forgot-password' && 'Campus Credential Recovery'}
               </h1>
               <p className="text-xs text-[#62605B]">
                 {mode === 'login' && 'Sign in with your university roll number, employee ID, or institutional email.'}
                 {mode === 'signup' && 'Select your university role below to register for campus events or apply for organizer privileges.'}
-                {mode === 'admin-login' && 'Authorized university administrators only. No public administrator signup is permitted.'}
-                {mode === 'forgot-password' && 'Verify your university enrollment or employee ID to receive a password reset token.'}
+                {mode === 'admin-login' && 'Authorized university administrators only.'}
+                {mode === 'admin-activate' && 'Enter your one-time invitation token from a Super Admin to set your password and activate your administrator account.'}
+                {mode === 'forgot-password' && 'Verify your university enrollment or employee ID to receive password recovery instructions.'}
               </p>
             </div>
             <div className="shrink-0 hidden sm:block">
@@ -710,7 +762,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           )}
 
           {/* ========================================== */}
-          {/* 3. UNIVERSITY ADMIN LOGIN (Sections 16-24) */}
+          {/* 3. UNIVERSITY ADMIN LOGIN (Sections 3, 7)  */}
           {/* ========================================== */}
           {mode === 'admin-login' && (
             <form onSubmit={e => handleLogin(e, true)} className="space-y-4">
@@ -723,7 +775,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
 
               <div>
                 <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B] mb-1.5">
-                  Admin ID / University Email *
+                  University Email / Admin ID *
                 </label>
                 <div className="flex items-center gap-2.5 bg-[#EAE5DB] border border-[#B9B4AA] px-3.5 py-2.5 rounded-[3px] focus-within:border-[#18212B] focus-within:bg-[#FCFAF5]">
                   <KeyRound className="w-4 h-4 text-[#B6533C] shrink-0" />
@@ -739,9 +791,18 @@ export const AuthView: React.FC<AuthViewProps> = ({
               </div>
 
               <div>
-                <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B] mb-1.5">
-                  Password *
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B]">
+                    Password *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchMode('forgot-password')}
+                    className="text-[11px] font-mono font-bold text-[#B6533C] hover:underline cursor-pointer"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
                 <div className="flex items-center gap-2.5 bg-[#EAE5DB] border border-[#B9B4AA] px-3.5 py-2.5 rounded-[3px] focus-within:border-[#18212B] focus-within:bg-[#FCFAF5]">
                   <Lock className="w-4 h-4 text-[#B6533C] shrink-0" />
                   <input
@@ -768,7 +829,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 </Button>
               </div>
 
-              <div className="pt-3 border-t border-[#B9B4AA]/60 flex items-center justify-between text-xs">
+              <div className="pt-3 border-t border-[#B9B4AA]/60 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs">
                 <button
                   type="button"
                   onClick={() => handleSwitchMode('login')}
@@ -776,15 +837,110 @@ export const AuthView: React.FC<AuthViewProps> = ({
                 >
                   ← Standard Student / Organizer Login
                 </button>
-                <span className="font-mono text-[10px] text-[#62605B]">
-                  Protected Route: /admin/login
-                </span>
+                <button
+                  type="button"
+                  onClick={() => handleSwitchMode('admin-activate')}
+                  className="font-mono text-[11px] font-bold text-[#B6533C] hover:underline cursor-pointer"
+                >
+                  Activate One-Time Admin Invitation →
+                </button>
               </div>
             </form>
           )}
 
           {/* ========================================== */}
-          {/* 4. FORGOT PASSWORD FLOW                    */}
+          {/* 3B. ONE-TIME ADMIN INVITATION ACTIVATION   */}
+          {/* ========================================== */}
+          {mode === 'admin-activate' && (
+            <form onSubmit={handleActivateAdminInvite} className="space-y-4">
+              <div className="p-3.5 bg-[#FBF4E8] border border-[#E5D2AF] border-l-4 border-l-[#B08A4A] rounded-[2px] text-xs text-[#18212B]">
+                Enter your invited DHSGSU institutional email and the one-time cryptographically generated invitation token issued by a Super Admin.
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B] mb-1">
+                  Invited Institutional Email *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. proctor@dhsgsu.edu.in"
+                  value={inviteEmail}
+                  onChange={e => setInviteEmail(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-medium text-[#18212B] focus:outline-none focus:border-[#18212B] focus:bg-[#FCFAF5]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B] mb-1">
+                  One-Time Invitation Token *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Paste one-time invitation token"
+                  value={inviteToken}
+                  onChange={e => setInviteToken(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-mono font-bold text-[#18212B] focus:outline-none focus:border-[#18212B] focus:bg-[#FCFAF5]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B] mb-1">
+                    Set New Password *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Min 8 characters"
+                    value={invitePassword}
+                    onChange={e => setInvitePassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-medium text-[#18212B] focus:outline-none focus:border-[#18212B] focus:bg-[#FCFAF5]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-mono font-bold uppercase tracking-wider text-[#18212B] mb-1">
+                    Confirm Password *
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Re-enter password"
+                    value={inviteConfirmPassword}
+                    onChange={e => setInviteConfirmPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] text-xs font-medium text-[#18212B] focus:outline-none focus:border-[#18212B] focus:bg-[#FCFAF5]"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2">
+                <Button
+                  type="submit"
+                  variant="dark"
+                  size="lg"
+                  isLoading={isLoading}
+                  leftIcon={<ShieldCheck className="w-4 h-4 text-[#B6533C]" />}
+                  className="w-full justify-center py-3 text-sm"
+                >
+                  Activate Administrator Account
+                </Button>
+              </div>
+
+              <div className="pt-3 border-t border-[#B9B4AA]/60 flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchMode('admin-login')}
+                  className="font-mono font-bold text-[#62605B] hover:text-[#18212B] cursor-pointer"
+                >
+                  ← Back to Admin Login
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ========================================== */}
+          {/* 4. FORGOT PASSWORD FLOW (Section 25)       */}
           {/* ========================================== */}
           {mode === 'forgot-password' && (
             <form onSubmit={handleForgotPassword} className="space-y-4">
@@ -795,7 +951,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
                     <span>Recovery Instructions Sent</span>
                   </div>
                   <p className="leading-relaxed text-[#18212B]">
-                    If <strong>{loginIdentifier}</strong> matches an active DHSGSU record, a password reset link has been dispatched to your institutional email address.
+                    If an account exists for this email, password recovery instructions have been sent.
                   </p>
                 </div>
               ) : (
@@ -832,7 +988,7 @@ export const AuthView: React.FC<AuthViewProps> = ({
           )}
 
           {/* Discreet Reference Directory Accordion for Student & Organizer Evaluators */}
-          {mode !== 'admin-login' && (
+          {mode !== 'admin-login' && mode !== 'admin-activate' && (
             <div className="pt-4 border-t border-[#B9B4AA]/60">
               <button
                 type="button"

@@ -12,21 +12,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "server": "node server/index.js",
-    "server:start": "node server/index.js",
-    "server:install": "npm --prefix server install",
-    "web:dev": "next dev",
-    "web:build": "next build",
-    "web:start": "next start"
+    "lint": "eslint"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
+    "html5-qrcode": "^2.3.8",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.48.0",
     "mongoose": "^9.10.4",
     "next": "16.3.7",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
@@ -35,6 +31,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

@@ -1,12 +1,28 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import QRCode from 'qrcode';
 import { Registration, CampusEvent } from '../../types';
 import { Modal } from '../ui/Modal';
 import { Button } from '../ui/Button';
-import { Calendar, MapPin, Clock, ShieldCheck, Printer, UserCheck, Building2, Hash } from 'lucide-react';
+import {
+  Calendar,
+  MapPin,
+  Clock,
+  ShieldCheck,
+  Printer,
+  UserCheck,
+  Building2,
+  Hash,
+  QrCode,
+  RefreshCw,
+  CheckCircle2,
+  Copy,
+} from 'lucide-react';
 import { Badge } from '../ui/Badge';
 import { ParisarLogo } from '../ui/ParisarLogo';
+import { useApp } from '../../context/AppContext';
+import { useToast } from '../ui/Toast';
 
 interface EventPassModalProps {
   isOpen: boolean;
@@ -21,6 +37,44 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
   registration,
   event,
 }) => {
+  const { attendance, generateTemporaryAttendanceQr } = useApp();
+  const { showToast } = useToast();
+
+  const [tempQrDataUrl, setTempQrDataUrl] = useState<string | null>(null);
+  const [tempToken, setTempToken] = useState<string | null>(null);
+  const [expiresAtMs, setExpiresAtMs] = useState<number | null>(null);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(0);
+  const [isGeneratingQr, setIsGeneratingQr] = useState(false);
+  const [qrError, setQrError] = useState<string | null>(null);
+
+  // Countdown timer for 60-second temporary QR
+  useEffect(() => {
+    if (!expiresAtMs) {
+      setSecondsRemaining(0);
+      return;
+    }
+
+    const updateTimer = () => {
+      const diffSec = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
+      setSecondsRemaining(diffSec);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 500);
+    return () => clearInterval(interval);
+  }, [expiresAtMs]);
+
+  // Reset temporary QR state when modal closes or event changes
+  useEffect(() => {
+    if (!isOpen) {
+      setTempQrDataUrl(null);
+      setTempToken(null);
+      setExpiresAtMs(null);
+      setSecondsRemaining(0);
+      setQrError(null);
+    }
+  }, [isOpen, event?._id]);
+
   if (!registration || !event) return null;
 
   const eventDate = new Date(event.startTime).toLocaleDateString('en-IN', {
@@ -40,14 +94,52 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
     hour12: true,
   })}`;
 
-  const isPresentMarked = Boolean(registration.checkedInAt);
+  const matchedAtt = attendance.find(
+    a => a.eventId === event._id && (a.registrationId === registration._id || a.userId === registration.userId)
+  );
+  const isPresentMarked = Boolean(registration.checkedInAt || (matchedAtt && matchedAtt.status !== 'ABSENT'));
+  const isOfflineOrHybrid = (event.eventMode || 'OFFLINE') !== 'ONLINE';
+
+  const handleSubmitAttendanceQr = async () => {
+    setQrError(null);
+    setIsGeneratingQr(true);
+    const res = await generateTemporaryAttendanceQr(event._id);
+    setIsGeneratingQr(false);
+
+    if (!res.success) {
+      setQrError(res.error.message);
+      showToast('error', res.error.message, 'Attendance QR Unavailable');
+      return;
+    }
+
+    try {
+      const dataUrl = await QRCode.toDataURL(res.data.token, {
+        width: 240,
+        margin: 2,
+        color: {
+          dark: '#18212B',
+          light: '#FCFAF5',
+        },
+      });
+      setTempQrDataUrl(dataUrl);
+      setTempToken(res.data.token);
+      setExpiresAtMs(new Date(res.data.expiresAt).getTime());
+      showToast(
+        'success',
+        'Temporary 60-second attendance QR generated. Show this to the event organizer.',
+        'Attendance QR Active (60s)'
+      );
+    } catch {
+      setQrError('Could not render QR image.');
+    }
+  };
 
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="PARISAR Digital Registration Card"
-      subtitle="Dr. Harisingh Gour Vishwavidyalaya • Official Registration Credential"
+      title="PARISAR Registration & Attendance Pass"
+      subtitle="Dr. Harisingh Gour Vishwavidyalaya • Official Event Credential"
       maxWidth="md"
       footer={
         <div className="flex items-center justify-between w-full">
@@ -62,7 +154,7 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
               leftIcon={<Printer className="w-3.5 h-3.5" />}
               onClick={() => window.print()}
             >
-              Print Card
+              Print Pass
             </Button>
             <Button variant="primary" size="sm" onClick={onClose}>
               Done
@@ -71,7 +163,6 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
         </div>
       }
     >
-      {/* Official Digital Registration Card - Warm Ivory Surface, Ink Typography, Terracotta & Brass Accents */}
       <div className="bg-[#FCFAF5] border-2 border-[#18212B] shadow-[4px_4px_0_0_#18212B] rounded-[4px] p-5 text-[#18212B] relative overflow-hidden">
         {/* Card Top Branding with DHSGSU Seal */}
         <div className="flex items-start justify-between border-b-2 border-[#18212B] pb-3 mb-4">
@@ -108,34 +199,119 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
           </div>
         </div>
 
-        {/* Official Registration ID & Verification Banner */}
-        <div className="p-3.5 bg-[#EAE5DB] border border-[#B9B4AA] rounded-[3px] mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        {/* ============================================================ */}
+        {/* OFFLINE EVENT: TEMPORARY 60-SECOND STUDENT ATTENDANCE QR      */}
+        {/* ============================================================ */}
+        {isOfflineOrHybrid && (
+          <div className="mb-4 p-4 bg-[#EAE5DB] border-2 border-[#18212B] rounded-[4px] text-center space-y-3">
+            {isPresentMarked ? (
+              <div className="py-3 space-y-1.5">
+                <CheckCircle2 className="w-8 h-8 text-[#2F613B] mx-auto" />
+                <div className="text-sm font-extrabold text-[#2F613B]">
+                  Attendance Verified &amp; Recorded
+                </div>
+                <p className="text-xs text-[#62605B]">
+                  Your physical attendance for this event has been verified and locked.
+                </p>
+              </div>
+            ) : tempQrDataUrl && secondsRemaining > 0 ? (
+              <div className="space-y-2.5">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#18212B] text-[#FCFAF5] rounded-[2px] text-[10px] font-mono font-bold uppercase">
+                  <Clock className="w-3 h-3 text-[#B6533C]" />
+                  <span>One-Time QR Expires In: {secondsRemaining}s</span>
+                </div>
+
+                <div className="bg-[#FCFAF5] p-3 border-2 border-[#18212B] rounded-[4px] inline-block mx-auto shadow-[2px_2px_0_0_#18212B]">
+                  <img
+                    src={tempQrDataUrl}
+                    alt="Temporary 60s Attendance QR"
+                    className="w-48 h-48 mx-auto block"
+                  />
+                </div>
+
+                <p className="text-[11px] text-[#18212B] font-medium">
+                  Present this QR code to the Event Organizer scanner. Valid for{' '}
+                  <strong>{secondsRemaining} seconds</strong> and single-use only.
+                </p>
+
+                {tempToken && (
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] font-mono text-[#62605B]">
+                    <span className="truncate max-w-[200px]">Token: {tempToken}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(tempToken);
+                        showToast('info', 'Temporary token copied for scanner testing.', 'Copied');
+                      }}
+                      className="px-1.5 py-0.5 bg-[#FCFAF5] border border-[#B9B4AA] rounded text-[#18212B] font-bold inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-2.5 h-2.5" />
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2.5 py-1">
+                <div className="text-xs font-extrabold uppercase font-mono text-[#18212B] flex items-center justify-center gap-1.5">
+                  <QrCode className="w-4 h-4 text-[#B6533C]" />
+                  <span>
+                    {tempToken && secondsRemaining === 0
+                      ? 'Temporary Attendance QR Expired'
+                      : 'Offline Event Attendance Verification'}
+                  </span>
+                </div>
+                <p className="text-xs text-[#62605B] max-w-sm mx-auto leading-relaxed">
+                  {tempToken && secondsRemaining === 0
+                    ? 'Your previous 60-second QR token has expired. Generate a fresh attendance QR when the organizer is ready to scan.'
+                    : 'Click below at the event venue to generate a dynamic, one-time 60-second QR code for the organizer to scan.'}
+                </p>
+                {qrError && (
+                  <div className="text-[11px] font-bold text-[#A83226] bg-[#FDF0EE] p-2 rounded border border-[#E9BFB8]">
+                    {qrError}
+                  </div>
+                )}
+                <Button
+                  variant="primary"
+                  size="md"
+                  isLoading={isGeneratingQr}
+                  leftIcon={
+                    tempToken ? (
+                      <RefreshCw className="w-4 h-4" />
+                    ) : (
+                      <QrCode className="w-4 h-4" />
+                    )
+                  }
+                  onClick={handleSubmitAttendanceQr}
+                >
+                  {tempToken ? 'Generate New 60s Attendance QR' : 'Submit Attendance'}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Official Registration ID Banner */}
+        <div className="p-3 bg-[#EAE5DB]/60 border border-[#B9B4AA] rounded-[3px] mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <div className="text-[10px] font-mono uppercase tracking-wider text-[#62605B] font-bold flex items-center gap-1">
               <Hash className="w-3 h-3 text-[#B6533C]" /> Registration ID
             </div>
-            <div className="font-mono text-xs sm:text-sm font-bold text-[#18212B] mt-0.5 tracking-wider">
-              {registration._id.toUpperCase()} ({registration.qrToken})
+            <div className="font-mono text-xs font-bold text-[#18212B] mt-0.5">
+              {registration._id.toUpperCase()}
             </div>
           </div>
           <div className="text-left sm:text-right">
             <div className="text-[10px] font-mono uppercase text-[#62605B] font-bold">
-              Roster Verification
+              Verification Mode
             </div>
             <div className="text-xs font-semibold text-[#2E6B4E] inline-flex items-center gap-1 mt-0.5">
               <UserCheck className="w-3.5 h-3.5" />
               {event.eventMode === 'ONLINE'
-                ? 'Online Session Verified'
-                : 'Organizer Roster Check-In'}
+                ? 'Online 2-Min Checkpoints'
+                : '60s Dynamic Student QR'}
             </div>
           </div>
-        </div>
-
-        {/* Perforated Divider Line */}
-        <div className="relative my-4">
-          <div className="border-t-2 border-dashed border-[#B9B4AA]"></div>
-          <div className="absolute -left-7 -top-2.5 w-5 h-5 rounded-full bg-[#F4F0E8] border-r-2 border-[#18212B]"></div>
-          <div className="absolute -right-7 -top-2.5 w-5 h-5 rounded-full bg-[#F4F0E8] border-l-2 border-[#18212B]"></div>
         </div>
 
         {/* Student Identity & Schedule Logistics Grid */}
@@ -172,11 +348,6 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
               <span className="truncate">{event.venue}</span>
             </div>
           </div>
-        </div>
-
-        {/* Academic Policy Notice */}
-        <div className="mt-3 p-2.5 bg-[#FDF7EC] border border-[#B26B16]/40 rounded-[2px] text-[10px] text-[#7D4A0D] leading-relaxed">
-          <strong>University Attendance Policy:</strong> For physical events, the organizer verifies your attendance directly from the registered student roster using your Name and Roll Number ({registration.userRollNumber}). For online events, join the active event session to log verified participation ({event.minParticipationPercent ?? 80}% minimum required for certificate eligibility).
         </div>
 
         {/* Bottom Institutional Seal Line */}

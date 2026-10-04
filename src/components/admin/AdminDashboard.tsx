@@ -23,6 +23,7 @@ interface AdminDashboardProps {
   onNavigateToVenues: () => void;
   onNavigateToUsers?: () => void;
   onNavigateToAudit?: () => void;
+  onNavigateToAdministrators?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -32,6 +33,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onNavigateToAttendance,
   onNavigateToVenues,
   onNavigateToAudit,
+  onNavigateToAdministrators,
 }) => {
   const {
     allUsers,
@@ -376,6 +378,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <Building2 className="w-4 h-4" />
           </div>
         </button>
+
+        {onNavigateToAdministrators && (
+          <button
+            onClick={onNavigateToAdministrators}
+            className="p-4 bg-[#FCFAF5] border border-[#B9B4AA] rounded-[4px] shadow-[2px_2px_0_0_#18212B] active:translate-y-[1px] transition-all text-left flex items-center justify-between gap-3 cursor-pointer touch-manipulation"
+          >
+            <div className="space-y-1">
+              <div className="text-sm font-extrabold text-[#18212B]">Administrators</div>
+              <div className="text-xs text-[#62605B]">
+                {allUsers.filter(u => u.role === 'admin').length} university admins
+              </div>
+            </div>
+            <div className="w-9 h-9 rounded-[3px] bg-[#EAE5DB] text-[#B6533C] border border-[#B9B4AA] flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+          </button>
+        )}
 
         {onNavigateToAudit && (
           <button

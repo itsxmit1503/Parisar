@@ -43,11 +43,16 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST /api/v1/certificates
- * Server-side certificate issuance for eligible attendees (participationPercent >= minParticipationPercent).
+ * Authoritative Server-Side Certificate Issuance (Section 21):
+ * - Never trusts client-submitted eligible = true
+ * - Offline Event (OFFLINE_QR): Requires recorded PRESENT attendance
+ * - Online Event (ONLINE_SESSION): Requires verified checkpoints >= requiredCheckpoints (or participationPercent >= minParticipationPercent)
  */
 export async function POST(req: NextRequest) {
   try {
     const auth = requireOrganizer(req);
+    if (!auth.authorized) return auth.response;
+
     const db = await loadSharedDbAsync();
     const body = await req.json();
     const eventId = (body.eventId || '').trim();
@@ -58,14 +63,24 @@ export async function POST(req: NextRequest) {
     }
 
     const minPct = event.minParticipationPercent ?? 80;
+    const reqCheckpoints = event.onlineAttendancePolicy?.requiredCheckpoints ?? 2;
     const eventAttendees = db.attendance.filter(a => a.eventId === eventId);
 
     const eligibleAttendees = eventAttendees.filter(att => {
-      const pct = att.participationPercent ?? 100;
       const alreadyIssued = db.certificates.some(
         c => c.eventId === eventId && c.userId === att.userId
       );
-      return pct >= minPct && !alreadyIssued;
+      if (alreadyIssued) return false;
+
+      // Authoritative eligibility calculation based on attendanceType
+      if (att.attendanceType === 'ONLINE_SESSION' || event.eventMode === 'ONLINE') {
+        const verifiedCps = att.checkpointsVerified ?? 0;
+        const pct = att.participationPercent ?? 0;
+        return verifiedCps >= reqCheckpoints || pct >= minPct;
+      }
+
+      // Offline physical event: must have recorded PRESENT attendance
+      return att.status === 'PRESENT' && (att.participationPercent ?? 100) >= minPct;
     });
 
     if (eligibleAttendees.length === 0) {
@@ -112,8 +127,10 @@ export async function POST(req: NextRequest) {
     }
 
     recordAuditLog({
-      actor: auth.authorized ? auth.user.sub : event.organizerId,
-      role: auth.authorized ? auth.user.role : 'organizer',
+      actor: auth.user.sub,
+      actorName: auth.user.email,
+      role: auth.user.role,
+      adminLevel: auth.user.adminLevel,
       action: 'CERTIFICATE_ISSUED',
       entity: 'CampusEvent',
       entityId: event._id,

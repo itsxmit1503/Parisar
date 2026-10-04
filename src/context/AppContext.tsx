@@ -14,7 +14,11 @@ import {
   ScanVerificationResult,
   ApiResponse,
   EventStatus,
-  OrganizerVerificationRequest
+  OrganizerVerificationRequest,
+  AdminLevel,
+  AdminAccountStatus,
+  AdminPermission,
+  OnlineAttendanceCheckpoint
 } from '../types';
 import { 
   INITIAL_USERS, 
@@ -38,6 +42,7 @@ interface AppContextType {
   currentPlatform: 'web' | 'mobile';
   setCurrentUserId: (id: string) => void;
   loginWithCredentials: (identifier: string, password?: string, adminOnly?: boolean, replaceDevice?: boolean) => Promise<ApiResponse<User>>;
+  activateAdminInvitation: (email: string, invitationToken: string, password: string) => Promise<ApiResponse<User>>;
   registerStudentAccount: (data: {
     name: string;
     rollNumber: string;
@@ -82,10 +87,34 @@ interface AppContextType {
   getRecommendedEvents: () => CampusEvent[];
   getStudentPassportStats: (userId?: string) => PassportStats;
   joinOrValidateOnlineAttendance: (eventId: string, addMinutes?: number, leaveSession?: boolean) => ApiResponse<AttendanceRecord>;
+  generateTemporaryAttendanceQr: (eventId: string) => Promise<ApiResponse<{
+    token: string;
+    expiresAt: string;
+    expiresInSeconds: number;
+    eventId: string;
+    eventTitle: string;
+    studentName: string;
+    rollNumber: string;
+  }>>;
+  joinOnlineEventSession: (eventId: string) => Promise<ApiResponse<{
+    attendanceRecord: AttendanceRecord;
+    checkpoints: OnlineAttendanceCheckpoint[];
+    requiredCheckpoints: number;
+    totalCheckpoints: number;
+  }>>;
+  triggerOnlineCheckpoint: (eventId: string) => Promise<ApiResponse<OnlineAttendanceCheckpoint>>;
+  verifyOnlineCheckpoint: (eventId: string, checkpointId?: string) => Promise<ApiResponse<{
+    attendanceRecord: AttendanceRecord;
+    checkpoint: OnlineAttendanceCheckpoint;
+    verifiedCheckpointsCount: number;
+    requiredCheckpoints: number;
+    eligibleForCertificate: boolean;
+  }>>;
   
-  // Organizer & Roster Attendance Actions
+  // Organizer & Attendance Actions
   createEvent: (eventData: Omit<CampusEvent, '_id' | 'organizerId' | 'organizerName' | 'organizerEmail' | 'registrationCount' | 'createdAt' | 'updatedAt'>, asDraft?: boolean) => ApiResponse<CampusEvent>;
   updateEvent: (eventId: string, updates: Partial<CampusEvent>) => ApiResponse<CampusEvent>;
+  scanTemporaryAttendanceQr: (eventId: string, token: string) => Promise<ScanVerificationResult>;
   verifyAndCheckIn: (eventId: string, qrToken: string, method?: 'qr' | 'manual') => ScanVerificationResult;
   markRosterAttendance: (eventId: string, registrationId: string, status: 'PRESENT' | 'ABSENT') => ApiResponse<AttendanceRecord | null>;
   markAllRosterPresent: (eventId: string) => ApiResponse<number>;
@@ -103,6 +132,20 @@ interface AppContextType {
   adminModerateEvent: (eventId: string, newStatus: EventStatus, rejectionReason?: string) => ApiResponse<CampusEvent>;
   adminUpdateUserRole: (userId: string, newRole: User['role']) => ApiResponse<User>;
   sendUniversityAnnouncement: (title: string, message: string, targetAudience?: 'ALL' | 'STUDENTS' | 'ORGANIZERS') => ApiResponse<number>;
+  createOrInviteAdministrator: (data: {
+    name: string;
+    email: string;
+    universityId?: string;
+    department: string;
+    designation?: string;
+    adminLevel: AdminLevel;
+    adminPermissions: AdminPermission[];
+    password?: string;
+    inviteMode?: boolean;
+  }) => Promise<ApiResponse<{ user: User; devInvitationToken?: string }>>;
+  updateAdministratorStatus: (adminUserId: string, status: AdminAccountStatus) => Promise<ApiResponse<User>>;
+  updateAdministratorPermissions: (adminUserId: string, adminLevel: AdminLevel, permissions: AdminPermission[]) => Promise<ApiResponse<User>>;
+  adminCorrectAttendance: (eventId: string, registrationId: string, status: 'PRESENT' | 'ABSENT', reason: string) => Promise<ApiResponse<AttendanceRecord | null>>;
   
   // Prototype controls
   resetPrototypeData: () => void;
@@ -129,14 +172,22 @@ function mergeUsersList(serverUsers: User[], clientUsers: User[]): User[] {
     if (idx === -1) {
       merged.unshift(cu);
     } else {
+      const serverUser = merged[idx];
       merged[idx] = {
-        ...merged[idx],
+        ...serverUser,
         ...cu,
+        role: serverUser.role === 'admin' ? 'admin' : cu.role || serverUser.role,
+        adminLevel: serverUser.adminLevel || cu.adminLevel,
+        adminAccountStatus: serverUser.adminAccountStatus || cu.adminAccountStatus,
+        adminPermissions:
+          serverUser.adminPermissions && serverUser.adminPermissions.length > 0
+            ? serverUser.adminPermissions
+            : cu.adminPermissions,
+        lastLoginAt: serverUser.lastLoginAt || cu.lastLoginAt,
         organizerStatus:
-          merged[idx].organizerStatus === 'VERIFIED'
+          serverUser.organizerStatus === 'VERIFIED'
             ? 'VERIFIED'
-            : cu.organizerStatus || merged[idx].organizerStatus,
-        passwordHash: cu.passwordHash || merged[idx].passwordHash,
+            : cu.organizerStatus || serverUser.organizerStatus,
       };
     }
   }
@@ -396,6 +447,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       // ignore
     }
+    fetch('/api/v1/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'logout' }),
+    }).catch(() => {});
   };
 
   const verifyOrReplaceDevice = (platform: 'web' | 'mobile', deviceName?: string): ApiResponse<User> => {
@@ -543,7 +599,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       // Network error fallback: check merged local store
     }
 
-    // 2. Fallback check in merged user list
+    // 2. Fallback check in merged user list (never allow client-side admin login bypass if server failed)
+    if (adminOnly) {
+      return {
+        success: false,
+        error: {
+          code: 'SERVER_REQUIRED',
+          message: 'Administrator authentication requires server verification.',
+        },
+      };
+    }
+
     const found = allUsers.find(
       u =>
         u.email.toLowerCase() === cleanId ||
@@ -557,26 +623,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         error: {
           code: 'ACCOUNT_NOT_FOUND',
           message: 'Account not found. Check your email or roll number.',
-        },
-      };
-    }
-
-    if (found.passwordHash && password !== undefined && found.passwordHash !== password) {
-      return {
-        success: false,
-        error: {
-          code: 'INCORRECT_PASSWORD',
-          message: 'Incorrect password.',
-        },
-      };
-    }
-
-    if (adminOnly && found.role !== 'admin') {
-      return {
-        success: false,
-        error: {
-          code: 'UNAUTHORIZED_ADMIN',
-          message: 'Your account is currently unavailable.',
         },
       };
     }
@@ -598,6 +644,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAuthToken(`parisar_session_${found._id}`);
     setIsAuthenticated(true);
     return { success: true, data: updatedFound };
+  };
+
+  const activateAdminInvitation = async (
+    email: string,
+    invitationToken: string,
+    password: string
+  ): Promise<ApiResponse<User>> => {
+    try {
+      const apiRes = await fetch('/api/v1/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'activate-admin-invite',
+          email: email.trim(),
+          invitationToken: invitationToken.trim(),
+          password,
+        }),
+      });
+      const payload = await apiRes.json();
+      if (apiRes.ok && payload.success && payload.data?.user) {
+        const activatedAdmin: User = payload.data.user;
+        if (Array.isArray(payload.data.users)) {
+          setAllUsers(prev => mergeUsersList(payload.data.users, [activatedAdmin, ...prev]));
+        } else {
+          setAllUsers(prev => mergeUsersList([activatedAdmin], prev));
+        }
+        setCurrentUserIdState(activatedAdmin._id);
+        setAuthToken(payload.data.token || `parisar_session_${activatedAdmin._id}`);
+        setIsAuthenticated(true);
+        return { success: true, data: activatedAdmin };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'ACTIVATION_FAILED', message: 'Failed to activate administrator invitation.' },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Could not reach server to activate administrator invitation.' },
+      };
+    }
   };
 
   const registerStudentAccount = async (data: {
@@ -2046,7 +2133,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Persist organizer approval/rejection to shared PARISAR Auth API (/api/v1/auth)
     fetch('/api/v1/auth', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      },
       body: JSON.stringify({
         action: 'review-organizer',
         requestId,
@@ -2056,6 +2146,392 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }).catch(() => {});
 
     return { success: true, data: updatedReq };
+  };
+
+  // ==========================================
+  // Temporary Offline QR Attendance (Sections 13–15)
+  // ==========================================
+  const generateTemporaryAttendanceQr = async (eventId: string): Promise<ApiResponse<{
+    token: string;
+    expiresAt: string;
+    expiresInSeconds: number;
+    eventId: string;
+    eventTitle: string;
+    studentName: string;
+    rollNumber: string;
+  }>> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/attendance', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'generate-temp-qr',
+          eventId,
+          studentId: currentUser._id,
+        }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data) {
+        return { success: true, data: payload.data };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'QR_GEN_FAILED', message: 'Could not generate temporary attendance QR.' },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Network error while generating temporary attendance QR.' },
+      };
+    }
+  };
+
+  const scanTemporaryAttendanceQr = async (eventId: string, token: string): Promise<ScanVerificationResult> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/attendance', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'scan-temp-qr',
+          eventId,
+          token: token.trim(),
+        }),
+      });
+      const payload = await res.json();
+      if (payload.success && payload.data) {
+        const result: ScanVerificationResult = payload.data;
+        if (result.status === 'SUCCESS' && result.registration) {
+          const reg = result.registration;
+          const nowIso = result.checkedInAt || new Date().toISOString();
+          setRegistrations(prev =>
+            prev.map(r => (r._id === reg._id ? { ...r, checkedInAt: nowIso } : r))
+          );
+          if (payload.data.attendanceRecord) {
+            const attRec: AttendanceRecord = payload.data.attendanceRecord;
+            setAttendance(prev => {
+              const idx = prev.findIndex(a => a._id === attRec._id || (a.eventId === eventId && a.userId === reg.userId));
+              if (idx === -1) return [attRec, ...prev];
+              const next = [...prev];
+              next[idx] = attRec;
+              return next;
+            });
+          }
+        }
+        return result;
+      }
+      return {
+        status: 'INVALID',
+        message: payload.error?.message || 'Invalid attendance token.',
+      };
+    } catch {
+      return {
+        status: 'INVALID',
+        message: 'Invalid attendance token.',
+      };
+    }
+  };
+
+  // ==========================================
+  // Online Event 2-Minute Checkpoints (Sections 16–18)
+  // ==========================================
+  const joinOnlineEventSession = async (eventId: string): Promise<ApiResponse<{
+    attendanceRecord: AttendanceRecord;
+    checkpoints: OnlineAttendanceCheckpoint[];
+    requiredCheckpoints: number;
+    totalCheckpoints: number;
+  }>> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/attendance', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'online-check-in',
+          eventId,
+          studentId: currentUser._id,
+        }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data?.attendanceRecord) {
+        const attRec: AttendanceRecord = payload.data.attendanceRecord;
+        setAttendance(prev => {
+          const idx = prev.findIndex(a => a._id === attRec._id || (a.eventId === eventId && a.userId === currentUser._id));
+          if (idx === -1) return [attRec, ...prev];
+          const next = [...prev];
+          next[idx] = attRec;
+          return next;
+        });
+        if (payload.data.event) {
+          const srvEvent: CampusEvent = payload.data.event;
+          setEvents(prev => prev.map(e => (e._id === eventId ? { ...e, ...srvEvent } : e)));
+        }
+        return { success: true, data: payload.data };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'JOIN_FAILED', message: 'Failed to join online event session.' },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Failed to connect to online event session.' },
+      };
+    }
+  };
+
+  const triggerOnlineCheckpoint = async (eventId: string): Promise<ApiResponse<OnlineAttendanceCheckpoint>> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/attendance', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'trigger-checkpoint',
+          eventId,
+        }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data?.checkpoint) {
+        const cp: OnlineAttendanceCheckpoint = payload.data.checkpoint;
+        setEvents(prev =>
+          prev.map(e => {
+            if (e._id !== eventId) return e;
+            const existingCps = e.onlineCheckpoints || [];
+            return {
+              ...e,
+              attendanceSessionStatus: 'OPEN',
+              onlineCheckpoints: [...existingCps.filter(c => c.checkpointId !== cp.checkpointId), cp],
+            };
+          })
+        );
+        return { success: true, data: cp };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'CHECKPOINT_ERROR', message: 'Could not trigger online checkpoint.' },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Network error triggering online checkpoint.' },
+      };
+    }
+  };
+
+  const verifyOnlineCheckpoint = async (
+    eventId: string,
+    checkpointId?: string
+  ): Promise<ApiResponse<{
+    attendanceRecord: AttendanceRecord;
+    checkpoint: OnlineAttendanceCheckpoint;
+    verifiedCheckpointsCount: number;
+    requiredCheckpoints: number;
+    eligibleForCertificate: boolean;
+  }>> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/attendance', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'verify-checkpoint',
+          eventId,
+          checkpointId,
+          studentId: currentUser._id,
+        }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data?.attendanceRecord) {
+        const attRec: AttendanceRecord = payload.data.attendanceRecord;
+        setAttendance(prev => {
+          const idx = prev.findIndex(a => a._id === attRec._id || (a.eventId === eventId && a.userId === currentUser._id));
+          if (idx === -1) return [attRec, ...prev];
+          const next = [...prev];
+          next[idx] = attRec;
+          return next;
+        });
+        return { success: true, data: payload.data };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'CHECKPOINT_EXPIRED', message: 'This verification checkpoint has expired.' },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Could not verify participation checkpoint.' },
+      };
+    }
+  };
+
+  // ==========================================
+  // Administrator Management (Sections 7, 8, 24)
+  // ==========================================
+  const createOrInviteAdministrator = async (data: {
+    name: string;
+    email: string;
+    universityId?: string;
+    department: string;
+    designation?: string;
+    adminLevel: AdminLevel;
+    adminPermissions: AdminPermission[];
+    password?: string;
+    inviteMode?: boolean;
+  }): Promise<ApiResponse<{ user: User; devInvitationToken?: string }>> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/admin', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: data.inviteMode ? 'invite-admin' : 'create-admin',
+          ...data,
+        }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data?.user) {
+        const createdAdmin: User = payload.data.user;
+        setAllUsers(prev => mergeUsersList([createdAdmin], prev));
+        return {
+          success: true,
+          data: {
+            user: createdAdmin,
+            devInvitationToken: payload.data.devInvitationToken,
+          },
+        };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'ADMIN_CREATE_FAILED', message: 'Failed to create or invite administrator.' },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Network error while creating administrator.' },
+      };
+    }
+  };
+
+  const updateAdministratorStatus = async (
+    adminUserId: string,
+    status: AdminAccountStatus
+  ): Promise<ApiResponse<User>> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/admin', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'update-admin-status',
+          adminUserId,
+          status,
+        }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data?.user) {
+        const updatedAdmin: User = payload.data.user;
+        setAllUsers(prev => prev.map(u => (u._id === adminUserId ? { ...u, ...updatedAdmin } : u)));
+        return { success: true, data: updatedAdmin };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'STATUS_UPDATE_FAILED', message: 'Failed to update administrator status.' },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Network error updating administrator status.' },
+      };
+    }
+  };
+
+  const updateAdministratorPermissions = async (
+    adminUserId: string,
+    adminLevel: AdminLevel,
+    permissions: AdminPermission[]
+  ): Promise<ApiResponse<User>> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/admin', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'update-admin-permissions',
+          adminUserId,
+          adminLevel,
+          adminPermissions: permissions,
+        }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success && payload.data?.user) {
+        const updatedAdmin: User = payload.data.user;
+        setAllUsers(prev => prev.map(u => (u._id === adminUserId ? { ...u, ...updatedAdmin } : u)));
+        return { success: true, data: updatedAdmin };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'PERMISSIONS_UPDATE_FAILED', message: 'Failed to update administrator permissions.' },
+      };
+    } catch {
+      return {
+        success: false,
+        error: { code: 'NETWORK_ERROR', message: 'Network error updating administrator permissions.' },
+      };
+    }
+  };
+
+  const adminCorrectAttendance = async (
+    eventId: string,
+    registrationId: string,
+    status: 'PRESENT' | 'ABSENT',
+    reason: string
+  ): Promise<ApiResponse<AttendanceRecord | null>> => {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch('/api/v1/attendance', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          action: 'admin-correct-attendance',
+          eventId,
+          registrationId,
+          status,
+          reason,
+        }),
+      });
+      const payload = await res.json();
+      if (res.ok && payload.success) {
+        // Also update local state
+        markRosterAttendance(eventId, registrationId, status);
+        return { success: true, data: payload.data?.attendanceRecord || null };
+      }
+      return {
+        success: false,
+        error: payload.error || { code: 'CORRECTION_FAILED', message: 'Failed to apply administrative attendance correction.' },
+      };
+    } catch {
+      return markRosterAttendance(eventId, registrationId, status);
+    }
   };
 
   return (
@@ -2068,6 +2544,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentPlatform,
         setCurrentUserId,
         loginWithCredentials,
+        activateAdminInvitation,
         registerStudentAccount,
         registerOrganizerAccount,
         resubmitOrganizerVerification,
@@ -2088,6 +2565,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         registerForEvent,
         cancelRegistration,
         joinOrValidateOnlineAttendance,
+        generateTemporaryAttendanceQr,
+        joinOnlineEventSession,
+        triggerOnlineCheckpoint,
+        verifyOnlineCheckpoint,
         submitFeedback,
         updateUserInterests,
         markNotificationAsRead,
@@ -2096,6 +2577,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         getStudentPassportStats,
         createEvent,
         updateEvent,
+        scanTemporaryAttendanceQr,
         verifyAndCheckIn,
         markRosterAttendance,
         markAllRosterPresent,
@@ -2109,6 +2591,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminModerateEvent,
         adminUpdateUserRole,
         sendUniversityAnnouncement,
+        createOrInviteAdministrator,
+        updateAdministratorStatus,
+        updateAdministratorPermissions,
+        adminCorrectAttendance,
         resetPrototypeData,
         isLoaded,
       }}

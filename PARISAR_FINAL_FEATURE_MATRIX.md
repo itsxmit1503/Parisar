@@ -11,27 +11,25 @@
 | Architectural Layer | Implementation Status | Technology & Verification |
 | :--- | :--- | :--- |
 | **Web Application** | **100% Complete** | Next.js 16 (App Router), React 19, TypeScript, Neo-Skeuomorphic Editorial UI |
-| **Android Mobile Application** | **100% Complete** | Native Java Android WebView Wrapper (`in.edu.dhsgsu.parisar`) + Native Bridges & Runtime Permissions |
-| **REST API Backend (`/api/v1/*`)** | **100% Complete** | 16 Versioned Route Handlers (`auth`, `events`, `registrations`, `attendance`, `certificates`, `venues`, `notifications`, `users`, `devices`, `organizers`, `admin`, `audit`) |
+| **Android Mobile Application** | **100% Complete** | Native Java Android WebView Wrapper (`in.edu.dhsgsu.parisar`) + WebRTC Camera & Location Permissions |
+| **REST API Backend (`/api/v1/*`)** | **100% Complete** | Versioned Route Handlers (`auth`, `events`, `registrations`, `attendance`, `certificates`, `venues`, `notifications`, `users`, `devices`, `organizers`, `admin`, `audit`) |
 | **Database & Persistence** | **100% Complete** | Mongoose / MongoDB Models (`src/models/index.ts`) + Automatic In-Memory Shared Store Fallback (`src/lib/serverStore.ts`) |
-| **Authentication & Security** | **100% Complete** | `bcryptjs` Password Hashing, `jsonwebtoken` (JWT) Bearer Auth, Controlled `/admin/login` Entry, Role-Based Access Control (`student`, `organizer`, `admin`) |
+| **Authentication & Security** | **100% Complete** | `bcryptjs` Password Hashing, `jsonwebtoken` (JWT) Bearer + `HttpOnly` Cookie Auth, Edge Middleware (`src/middleware.ts`), Two-Tier Admin Governance (`SUPER_ADMIN` / `ADMIN`) |
 | **Campus Geography (DHSGSU)** | **100% Complete** | Google Maps JavaScript API centered on Patharia Hills (`23.8256, 78.7735`) + Verified **Abdul Gani Khan Stadium** (`23.8294032, 78.7755979`) |
 
 ---
 
-## 2. Attendance Architecture Matrix (Zero QR Code Dependency)
+## 2. Final Two-Mode Attendance Architecture Matrix
 
-PARISAR deliberately uses a **practical, realistic, two-mode attendance architecture** designed for real university operations rather than fragile QR camera scanning:
+PARISAR implements a **strict, anti-proxy, mode-specific attendance architecture** tailored separately for Offline/Physical events and Online/Virtual events:
 
-| Attendance Dimension | Physical / Offline Events (`OFFLINE`) | Online / Virtual Events (`ONLINE` / `HYBRID`) |
+| Attendance Dimension | Physical / Offline Events (`OFFLINE_QR`) | Online / Virtual Events (`ONLINE_SESSION`) |
 | :--- | :--- | :--- |
-| **Primary Mechanism** | **Organizer Roster-Based Attendance Console** | **Authenticated Student `[ JOIN EVENT ]` Session Tracking** |
-| **QR Code Dependency** | **None (Removed Completely)** | **None (Removed Completely)** |
-| **Verification Flow** | Organizer opens event → clicks `Start Attendance` (`OPEN`) → searches by Name / Roll Number / Email → marks `Present` or `Absent` | Student clicks `[ JOIN EVENT ]` during active window → backend records `joinedAt`, `leftAt`, `verifiedDuration`, and calculates `participationPercent` |
-| **Batch Operations** | `Mark All Present` + `Reset / Undo` (available while session is `OPEN`) | Automated heartbeat & session checkout duration telemetry |
-| **Finalization & Lock** | Organizer clicks `Close Attendance` → confirms modal (*"Attendance will be finalized for this event. Normal organizer edits will no longer be allowed."*) → status becomes `FINALIZED` (`isFinalized: true`) | When session closes, participation percentages are locked and evaluated against `minParticipationPercent` (default `80%`) |
-| **Post-Finalization Edits** | **Locked for Organizers** — normal organizer edits are blocked once `FINALIZED` | **Locked for Organizers** once finalized |
-| **University Admin Override** | **Supported & Audited** — Only `admin` can override finalized attendance (`Present` / `Absent`), recording an immutable `ATTENDANCE_ADMIN_OVERRIDE` audit entry | **Supported & Audited** via Admin Attendance Ledger |
+| **Primary Mechanism** | **Student 60-Second Dynamic QR + Organizer In-App Scanner** | **Authenticated `[ JOIN EVENT ]` + 2-Minute Live Verification Checkpoints** |
+| **How Attendance Works** | Student opens registered event → clicks `Submit Attendance` → Backend issues a **60-second, one-time-usable, event-specific, student-specific token** (`TemporaryAttendanceToken`) rendered as a dynamic QR code → Organizer scans via **Open Scanner** (`html5-qrcode`) | **No QR used.** Student clicks `Join Event` for initial check-in → Server triggers random **2-minute (120-second) attendance verification checkpoints** (`OnlineAttendanceCheckpoint`) → Student confirms prompt within 2 minutes |
+| **8-Rule Server Validation** | 1. Token exists 2. Matches event (`WRONG_EVENT`) 3. Student registered (`NOT_REGISTERED`) 4. Session is `OPEN` 5. Not expired (`EXPIRED`, >60s) 6. Not already used 7. Not already present (`ALREADY_PRESENT`) 8. Organizer owns event / Admin authorized | 1. Student registered 2. Session `OPEN` 3. Checkpoint active 4. Within strict **120-second** window (`now <= expiresAt`) 5. Not already completed by student 6. Server calculates `completedCheckpoints / totalCheckpoints` (e.g., `2 of 3` required) |
+| **Finalization & Lock** | Organizer clicks `Close Attendance` → status becomes `FINALIZED` (`isFinalized: true`), locking normal organizer edits and disabling QR generation/scanning | Closing attendance finalizes checkpoint verification and locks normal organizer edits |
+| **University Admin Correction** | **Supported & Audited** — Only `SUPER_ADMIN` or `ADMIN` with `MANAGE_ATTENDANCE` can correct finalized attendance, logging an immutable `ATTENDANCE_CORRECTED` audit entry | **Supported & Audited** via Admin Attendance Ledger |
 
 ---
 
@@ -43,13 +41,13 @@ PARISAR deliberately uses a **practical, realistic, two-mode attendance architec
 | :--- | :--- | :--- |
 | **Event Discovery & Filtering** | ✅ Complete | Search by title/tags, filter by category (`Academic`, `Workshop`, `Cultural`, `Sports`, etc.), mode (`OFFLINE`, `ONLINE`, `HYBRID`), and department |
 | **One-Click Event Registration** | ✅ Complete | Enforces capacity limits, registration deadlines, and duplicate prevention; issues a unique Registration ID |
-| **Digital Registration Card** | ✅ Complete | Clean, non-QR Digital Registration Pass (`EventPassModal.tsx`, `MyPassesView.tsx`) displaying Student Name, Roll Number, Event Title, Date/Time, Venue, Organizer, Registration Status, and Registration ID |
-| **Online Event `[ JOIN EVENT ]`** | ✅ Complete | Active join button in `EventDetailModal.tsx` for `ONLINE`/`HYBRID` events; records live session duration (`AttendanceSession`) and tracks progress toward the `80%` certificate threshold |
-| **Verified Certificates & PDF/Print** | ✅ Complete | Downloadable/printable official DHSGSU certificates (`DHSGSU-YYYY-XXXXXX`) unlocked only after verified attendance & required participation threshold |
+| **Offline 60-Second Dynamic Attendance QR** | ✅ Complete | Inside `EventPassModal.tsx` and `EventDetailModal.tsx`, students generate a temporary 60-second QR code (`TemporaryAttendanceToken`) with live countdown and one-click regeneration when attendance is `OPEN` |
+| **Online 2-Minute Checkpoint Verification** | ✅ Complete | Inside `EventDetailModal.tsx`, online participants see *"Attendance Verification: Please confirm your participation. This verification expires in 2 minutes."* with a live `2:00` countdown and progress indicator (`Checkpoints Verified: X / Y`) |
+| **Verified Certificates & PDF/Print** | ✅ Complete | Downloadable/printable official DHSGSU certificates (`DHSGSU-YYYY-XXXXXX`) unlocked only after verified server-side attendance eligibility |
 | **Academic Event Passport** | ✅ Complete | Cumulative ledger of attended events, workshops completed, participation hours, and earned credentials |
 | **Deterministic Initials Avatar** | ✅ Complete | Zero random stock/AI human photos. Displays deterministic initials (`Amit Sharma` → `AS`) via `UserAvatar.tsx` unless the student uploads a custom photo |
 | **Profile Photo Upload & Crop** | ✅ Complete | Upload file (`JPEG`/`PNG`/`WebP`, max `2.5MB`, min `64×64`) or capture via camera, interactive HTML5 Canvas `320×320` square center-crop, preview, save, change, or remove photo |
-| **5-Section Student Settings** | ✅ Complete | **1. PROFILE** (editable fields + locked University-verified fields with *"Contact University Administration"* notice), **2. ACCOUNT** (Password, Device Management, Active Sessions, Logout), **3. PREFERENCES** (`en`/`hi` language, In-App & Email notifications), **4. PRIVACY**, **5. SUPPORT** |
+| **5-Section Student Settings** | ✅ Complete | **1. PROFILE** (editable fields + locked University-verified fields), **2. ACCOUNT** (Password, Device Management, Active Sessions, Logout), **3. PREFERENCES** (`en`/`hi` language, notifications), **4. PRIVACY**, **5. SUPPORT** |
 
 ---
 
@@ -57,12 +55,12 @@ PARISAR deliberately uses a **practical, realistic, two-mode attendance architec
 
 | Feature | Status | Implementation Details |
 | :--- | :--- | :--- |
-| **Mandatory Organizer Verification** | ✅ Complete | New organizer signups enter `organizerStatus: 'PENDING'` and are blocked from creating or publishing events until approved by the University Administrator |
+| **Mandatory Organizer Verification** | ✅ Complete | New organizer signups enter `organizerStatus: 'PENDING'` and are blocked from creating or publishing events until approved by an authorized University Administrator |
 | **Create & Submit Event Proposals** | ✅ Complete | Full event creation form supporting `OFFLINE`, `ONLINE`, and `HYBRID` modes, authentic DHSGSU venues, capacity, certificate threshold (`minParticipationPercent`), and submission to DSW (`PENDING_REVIEW`) |
-| **Participant Roster Management** | ✅ Complete | Searchable table of registered students with Roll Number, Department, Semester, Registration Status, Attendance Status, and CSV Roster Export |
-| **Roster-Based Attendance Console** | ✅ Complete | Live summary counters (`Total Registered`, `Present`, `Absent`, `Unmarked`), instant search by Name/Roll/Email, status filter (`ALL`, `PRESENT`, `ABSENT`, `UNMARKED`), `Present`/`Absent` buttons, `Mark All Present`, `Reset / Undo`, and `Close Attendance` finalization modal |
-| **Targeted Event Announcements** | ✅ Complete | Dispatch real-time in-app notifications to all registered participants of a specific event |
-| **Certificate Batch Issuance** | ✅ Complete | Issue verifiable credentials to eligible attendees (`Present` + `>= 80%` participation) |
+| **In-App QR Attendance Scanner (`OFFLINE_QR`)** | ✅ Complete | `QRScannerView.tsx` embeds an in-app camera scanner (`html5-qrcode`) that validates student 60-second QR tokens against `/api/v1/attendance` and displays exact status feedback (`Attendance marked successfully.`, `Attendance already recorded.`, `QR expired...`, etc.) + recent check-ins list |
+| **Online Checkpoint Trigger (`ONLINE_SESSION`)** | ✅ Complete | Organizers can trigger live **2-minute (120-second) Attendance Verification Checkpoints** for online events and monitor active countdowns |
+| **Roster Management & CSV Export** | ✅ Complete | Searchable table of registered students with Roll Number, Department, Attendance Status, manual roster controls while `OPEN`, and CSV Roster Export |
+| **Targeted Event Announcements & Certificates** | ✅ Complete | Dispatch real-time notifications to registered participants and issue batch verifiable certificates |
 
 ---
 
@@ -70,11 +68,10 @@ PARISAR deliberately uses a **practical, realistic, two-mode attendance architec
 
 | Feature | Status | Implementation Details |
 | :--- | :--- | :--- |
-| **Dedicated `/admin/login` Portal** | ✅ Complete | Displays **PARISAR — University Administration** (*"Authorized university administrators only."*). No public admin signup; no admin password exposed in public UI; subtle `"University Administration"` link in Footer |
-| **Protected `/admin/*` Routes** | ✅ Complete | Dedicated routes for `/admin`, `/admin/login`, `/admin/events`, `/admin/organizers`, `/admin/users`, `/admin/attendance`, `/admin/certificates`, `/admin/venues`, and `/admin/audit` |
-| **Organizer Verification Queue** | ✅ Complete | Review pending faculty/club coordinator applications (`Approve` / `Reject` with official DSW remarks) |
-| **Event Moderation Queue** | ✅ Complete | Inspect event proposals (`PENDING_REVIEW`), verify venue & schedule conflicts, and `Approve & Publish` or `Return / Reject` with remarks |
-| **Audited Attendance Override** | ✅ Complete | Inspect any event's attendance ledger (`AdminAttendanceView.tsx`) and perform controlled overrides (`Mark Present` / `Mark Absent`) even on `FINALIZED` events, automatically logging `ATTENDANCE_ADMIN_OVERRIDE` |
-| **University User Directory** | ✅ Complete | Searchable directory of all students, organizers, and administrators with role management (`UserManagement.tsx`) |
-| **Campus Venues & GIS Management** | ✅ Complete | Manage authentic DHSGSU venues and verified coordinates (`AdminVenuesView.tsx`) |
-| **Immutable Audit Trail** | ✅ Complete | Timestamped log of administrative actions, role updates, event approvals, certificate issuances, and attendance overrides (`AdminAuditView.tsx`) |
+| **Dedicated `/admin/login` Portal & Edge Guard** | ✅ Complete | Displays **PARISAR — University Administration** (*"Authorized university administrators only."*). Protected by Next.js Edge Middleware (`src/middleware.ts`), anti-enumeration Forgot Password, and One-Time Admin Invitation Activation |
+| **Two-Tier Admin Governance (`SUPER_ADMIN` & `ADMIN`)** | ✅ Complete | `SUPER_ADMIN` holds full institutional control; delegated `ADMIN` accounts enforce granular permissions (`MANAGE_ORGANIZERS`, `MANAGE_EVENTS`, `MANAGE_USERS`, `MANAGE_ATTENDANCE`, `MANAGE_CERTIFICATES`, `MANAGE_VENUES`, `VIEW_AUDIT_LOG`, `MANAGE_SECURITY`, `MANAGE_ADMINS`) |
+| **Administrator Management (`/admin/administrators`)** | ✅ Complete | `SUPER_ADMIN` can view all administrators, create or invite new administrators with one-time SHA-256 hashed tokens (`24h` expiry), edit permissions, and suspend/revoke/restore admin access |
+| **Final Super Admin Protection** | ✅ Complete | Backend enforces that the last active `SUPER_ADMIN` can never be deleted, revoked, suspended, or demoted |
+| **Organizer & Event Moderation Queues** | ✅ Complete | Review pending organizer applications (`/admin/organizers`) and event proposals (`/admin/events`) with official remarks |
+| **Audited Attendance Correction (`/admin/attendance`)** | ✅ Complete | Authorized admins (`MANAGE_ATTENDANCE` / `SUPER_ADMIN`) can correct finalized attendance records, recording `ATTENDANCE_CORRECTED` in the audit trail |
+| **Immutable Audit Trail (`/admin/audit`)** | ✅ Complete | Timestamped log of `ADMIN_LOGIN`, `ADMIN_CREATED`, `ADMIN_INVITED`, `ADMIN_PERMISSIONS_UPDATED`, `ADMIN_SUSPENDED`, `ADMIN_REVOKED`, `ORGANIZER_APPROVED`, `EVENT_APPROVED`, `ATTENDANCE_FINALIZED`, `ATTENDANCE_CORRECTED`, and `CERTIFICATE_ISSUED` |

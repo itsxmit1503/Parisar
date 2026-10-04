@@ -5,6 +5,33 @@
 
 export type UserRole = 'student' | 'organizer' | 'admin';
 
+export type AdminLevel = 'SUPER_ADMIN' | 'ADMIN';
+
+export type AdminAccountStatus = 'INVITED' | 'ACTIVE' | 'SUSPENDED' | 'REVOKED';
+
+export type AdminPermission =
+  | 'MANAGE_ORGANIZERS'
+  | 'MANAGE_EVENTS'
+  | 'MANAGE_USERS'
+  | 'MANAGE_ATTENDANCE'
+  | 'MANAGE_CERTIFICATES'
+  | 'MANAGE_VENUES'
+  | 'MANAGE_ADMINS'
+  | 'VIEW_AUDIT_LOG'
+  | 'MANAGE_SECURITY';
+
+export const ALL_ADMIN_PERMISSIONS: AdminPermission[] = [
+  'MANAGE_ORGANIZERS',
+  'MANAGE_EVENTS',
+  'MANAGE_USERS',
+  'MANAGE_ATTENDANCE',
+  'MANAGE_CERTIFICATES',
+  'MANAGE_VENUES',
+  'MANAGE_ADMINS',
+  'VIEW_AUDIT_LOG',
+  'MANAGE_SECURITY',
+];
+
 export interface RegisteredDevice {
   deviceId: string;
   platform: 'web' | 'mobile';
@@ -32,9 +59,29 @@ export interface User {
   email: string;
   passwordHash?: string;
   rollNumber?: string;
+  universityId?: string;
+  adminId?: string;
   department: string;
   semester?: number;
   role: UserRole;
+  adminLevel?: AdminLevel;
+  permissions?: AdminPermission[];
+  adminPermissions?: AdminPermission[];
+  status?: AdminAccountStatus;
+  adminAccountStatus?: AdminAccountStatus;
+  emailVerified?: boolean;
+  mfaEnabled?: boolean;
+  lastLoginAt?: string;
+  failedLoginAttempts?: number;
+  lockedUntil?: string | null;
+  lastPasswordChangeAt?: string;
+  mustChangePassword?: boolean;
+  createdBy?: string;
+  createdByAdminId?: string;
+  invitationTokenHash?: string | null;
+  invitationExpiresAt?: string | null;
+  resetTokenHash?: string | null;
+  resetExpiresAt?: string | null;
   interests: string[];
   profileImage: string;
   bio?: string;
@@ -55,9 +102,9 @@ export interface OrganizerVerificationRequest {
   id: string;
   userId: string;
   fullName: string;
-  universityId: string; // Roll number or Employee ID (e.g. Y23141042 or EMP-DCSA-104)
+  universityId: string;
   department: string;
-  designation: string; // e.g. "Convener / Faculty" or "Student Society Lead"
+  designation: string;
   email: string;
   phone: string;
   reason: string;
@@ -67,7 +114,7 @@ export interface OrganizerVerificationRequest {
   reviewRemarks?: string;
 }
 
-export type EventCategory = 
+export type EventCategory =
   | 'Seminar'
   | 'Workshop'
   | 'Cultural'
@@ -80,14 +127,21 @@ export type EventCategory =
   | 'Club'
   | 'Placement'
   | 'Other'
-  // Backward compatibility aliases:
   | 'Workshops'
   | 'Seminars'
   | 'Competitions'
   | 'Cultural Events'
   | 'Career';
 
-export type EventStatus = 'DRAFT' | 'PENDING_REVIEW' | 'APPROVED' | 'PUBLISHED' | 'REJECTED' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
+export type EventStatus =
+  | 'DRAFT'
+  | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'PUBLISHED'
+  | 'REJECTED'
+  | 'ONGOING'
+  | 'COMPLETED'
+  | 'CANCELLED';
 
 export type EventMode = 'OFFLINE' | 'ONLINE' | 'HYBRID';
 
@@ -120,7 +174,6 @@ export interface CampusVenue {
   source: string;
   navigationQuery: string;
   isEventVenue?: boolean;
-  // Optional legacy fields retained only for TypeScript compatibility
   building?: string;
   floor?: string;
   capacity?: number;
@@ -131,30 +184,42 @@ export interface CampusVenue {
 
 export type CampusLocation = CampusVenue;
 
+export interface OnlineAttendancePolicy {
+  initialCheckInRequired?: boolean;
+  totalCheckpoints: number;
+  checkpointValiditySeconds: number;
+  requiredCheckpoints: number;
+  minParticipationPercent?: number;
+}
+
 export interface CampusEvent {
   _id: string;
   title: string;
   description: string;
   category: EventCategory;
   eventMode?: EventMode;
+  onlineLink?: string;
   organizerId: string;
   organizerName: string;
   organizerEmail: string;
   venue: string;
   venueId: string;
-  startTime: string; // ISO String
-  endTime: string;   // ISO String
+  startTime: string;
+  endTime: string;
   capacity: number;
   registrationCount: number;
-  registrationDeadline: string; // ISO String
+  registrationDeadline: string;
   tags: string[];
   coverImage: string;
   status: EventStatus;
   eligibility?: string;
   specialInstructions?: string;
-  departmentScope?: string; // e.g. "Department of Computer Science & Applications" or "Open to all DHSGSU"
+  departmentScope?: string;
   certificateRequired?: boolean;
-  minParticipationPercent?: number; // e.g. 80
+  minParticipationPercent?: number;
+  onlineAttendancePolicy?: OnlineAttendancePolicy;
+  onlinePolicy?: OnlineAttendancePolicy;
+  onlineCheckpoints?: OnlineAttendanceCheckpoint[];
   attendanceSessionStatus?: AttendanceSessionStatus;
   attendanceStartedAt?: string;
   attendanceClosedAt?: string;
@@ -181,23 +246,64 @@ export interface Registration {
   checkedInAt?: string | null;
 }
 
-export type AttendanceMethod = 'roster' | 'online_session' | 'admin_override' | 'qr' | 'manual';
+export type AttendanceType = 'OFFLINE_QR' | 'ONLINE_SESSION';
 
-export type ParticipantSessionStatus = 'JOINED' | 'ACTIVE' | 'PAUSED' | 'PAUSED_DISCONNECTED' | 'RESUMED' | 'ENDED' | 'COMPLETED';
+export type AttendanceMethod = 'qr' | 'online_session' | 'admin_override' | 'roster' | 'manual';
+
+export type ParticipantSessionStatus =
+  | 'JOINED'
+  | 'ACTIVE'
+  | 'PAUSED'
+  | 'PAUSED_DISCONNECTED'
+  | 'RESUMED'
+  | 'ENDED'
+  | 'COMPLETED';
+
+export interface TemporaryAttendanceToken {
+  id: string;
+  token: string;
+  eventId: string;
+  studentId: string;
+  registrationId: string;
+  createdAt: string;
+  expiresAt: string;
+  usedAt?: string | null;
+}
+
+export interface OnlineAttendanceCheckpoint {
+  id: string;
+  checkpointId?: string;
+  sessionId?: string;
+  eventId: string;
+  studentId?: string;
+  checkpointNumber: number;
+  triggeredAt: string;
+  expiresAt: string;
+  verifiedAt?: string | null;
+  status: 'ACTIVE' | 'VERIFIED' | 'MISSED' | 'EXPIRED';
+}
 
 export interface AttendanceRecord {
   _id: string;
   eventId: string;
   registrationId: string;
   userId: string;
+  studentId?: string;
   userName: string;
   userRollNumber: string;
   userDepartment: string;
-  status?: 'PRESENT' | 'ABSENT';
+  attendanceType?: AttendanceType;
+  status?: 'PRESENT' | 'ABSENT' | 'IN_PROGRESS';
   checkedInAt: string;
   checkedOutAt?: string;
   checkedInBy: string;
   method: AttendanceMethod;
+  initialCheckInDone?: boolean;
+  verifiedCheckpoints?: string[];
+  checkpointsVerified?: number;
+  checkpointsRequired?: number;
+  checkpointsTotal?: number;
+  checkpoints?: OnlineAttendanceCheckpoint[];
   participatedMinutes?: number;
   requiredMinutes?: number;
   totalEventMinutes?: number;
@@ -205,6 +311,10 @@ export interface AttendanceRecord {
   sessionStatus?: ParticipantSessionStatus;
   lastValidatedAt?: string;
   eligibleForCertificate?: boolean;
+  finalizedAt?: string;
+  finalizedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export type CertificateType = 'PARTICIPATION' | 'MERIT' | 'EXCELLENCE';
@@ -222,12 +332,12 @@ export interface Certificate {
   issuedAt: string;
   certificateType: CertificateType;
   issueAuthorizedBy: string;
-  academicAuthority?: string; // e.g. "Office of the Dean of Students' Welfare (DSW), DHSGSU"
+  academicAuthority?: string;
   participationPercent?: number;
   participatedMinutes?: number;
 }
 
-export type NotificationType = 
+export type NotificationType =
   | 'REGISTRATION_CONFIRMED'
   | 'EVENT_REMINDER'
   | 'VENUE_CHANGED'
@@ -253,7 +363,7 @@ export interface EventFeedback {
   eventId: string;
   userId: string;
   userName: string;
-  rating: number; // 1 to 5
+  rating: number;
   comment: string;
   createdAt: string;
 }
@@ -295,23 +405,54 @@ export interface AttendanceSession {
   verifiedDuration?: number;
   mode?: EventMode;
   minimumParticipationPercent?: number;
-  status: 'NOT_STARTED' | 'OPEN' | 'ACTIVE' | 'PAUSED' | 'DISCONNECTED' | 'RESUMED' | 'ENDED' | 'FINALIZED' | 'CLOSED';
+  checkpoints?: OnlineAttendanceCheckpoint[];
+  checkpointsVerified?: number;
+  checkpointsRequired?: number;
+  checkpointsTotal?: number;
+  status:
+    | 'NOT_STARTED'
+    | 'OPEN'
+    | 'ACTIVE'
+    | 'PAUSED'
+    | 'DISCONNECTED'
+    | 'RESUMED'
+    | 'ENDED'
+    | 'FINALIZED'
+    | 'CLOSED';
   deviceId?: string;
   createdAt?: string;
   updatedAt?: string;
 }
 
 export type AuditAction =
+  | 'ADMIN_LOGIN_SUCCESS'
+  | 'ADMIN_LOGIN_FAILED'
+  | 'ADMIN_LOGOUT'
+  | 'ADMIN_CREATED'
+  | 'ADMIN_INVITED'
+  | 'ADMIN_ACTIVATED'
+  | 'ADMIN_SUSPENDED'
+  | 'ADMIN_REVOKED'
+  | 'ADMIN_ROLE_CHANGED'
+  | 'ADMIN_PERMISSION_CHANGED'
+  | 'PASSWORD_CHANGED'
+  | 'PASSWORD_RESET'
+  | 'SESSION_REVOKED'
+  | 'ORGANIZER_APPROVED'
+  | 'ORGANIZER_REJECTED'
+  | 'EVENT_APPROVED'
+  | 'EVENT_REJECTED'
+  | 'ATTENDANCE_FINALIZED'
+  | 'ATTENDANCE_CORRECTED'
+  | 'USER_ROLE_CHANGED'
+  | 'VENUE_UPDATED'
+  // Legacy / general operational audit actions:
   | 'LOGIN'
   | 'LOGOUT'
   | 'STUDENT_REGISTERED'
   | 'ORGANIZER_REQUEST'
-  | 'ORGANIZER_APPROVED'
-  | 'ORGANIZER_REJECTED'
   | 'EVENT_CREATED'
   | 'EVENT_SUBMITTED'
-  | 'EVENT_APPROVED'
-  | 'EVENT_REJECTED'
   | 'EVENT_CANCELLED'
   | 'REGISTRATION_CREATED'
   | 'REGISTRATION_CANCELLED'
@@ -319,15 +460,16 @@ export type AuditAction =
   | 'ATTENDANCE_CHECKIN'
   | 'ATTENDANCE_CHECKOUT'
   | 'ATTENDANCE_MARKED'
-  | 'ATTENDANCE_FINALIZED'
   | 'ATTENDANCE_ADMIN_OVERRIDE'
   | 'ONLINE_SESSION_JOINED'
   | 'ONLINE_SESSION_LEFT'
+  | 'ONLINE_CHECKPOINT_TRIGGERED'
+  | 'ONLINE_CHECKPOINT_VERIFIED'
+  | 'ONLINE_CHECKPOINT_MISSED'
   | 'CERTIFICATE_ISSUED'
   | 'DEVICE_REGISTERED'
   | 'DEVICE_REVOKED'
   | 'ADMIN_ROLE_CHANGE'
-  | 'VENUE_UPDATED'
   | 'PROFILE_UPDATED';
 
 export interface AuditLogEntry {
@@ -335,6 +477,7 @@ export interface AuditLogEntry {
   actor: string;
   actorName?: string;
   role: UserRole;
+  adminLevel?: AdminLevel;
   action: AuditAction;
   entity: string;
   entityId: string;
@@ -342,14 +485,58 @@ export interface AuditLogEntry {
   metadata?: Record<string, unknown>;
 }
 
-export type ScanVerificationResult = 
-  | { status: 'SUCCESS'; message: string; registration: Registration; event: CampusEvent; attendee: User }
-  | { status: 'DUPLICATE'; message: string; registration: Registration; event: CampusEvent; attendee: User; checkedInAt: string }
-  | { status: 'WRONG_EVENT'; message: string; intendedEventTitle?: string; currentEventTitle: string }
-  | { status: 'INVALID'; message: string };
+export type ScanVerificationResult =
+  | {
+      status: 'SUCCESS';
+      message: string;
+      registration: Registration;
+      event: CampusEvent;
+      attendee: User;
+      checkedInAt?: string;
+    }
+  | {
+      status: 'ALREADY_PRESENT' | 'DUPLICATE';
+      message: string;
+      registration: Registration;
+      event: CampusEvent;
+      attendee: User;
+      checkedInAt: string;
+    }
+  | {
+      status: 'NOT_REGISTERED';
+      message: string;
+      registration?: Registration;
+      event?: CampusEvent;
+      attendee?: User;
+      checkedInAt?: string;
+    }
+  | {
+      status: 'WRONG_EVENT';
+      message: string;
+      intendedEventTitle?: string;
+      currentEventTitle: string;
+      registration?: Registration;
+      event?: CampusEvent;
+      attendee?: User;
+      checkedInAt?: string;
+    }
+  | {
+      status: 'EXPIRED';
+      message: string;
+      registration?: Registration;
+      event?: CampusEvent;
+      attendee?: User;
+      checkedInAt?: string;
+    }
+  | {
+      status: 'INVALID';
+      message: string;
+      registration?: Registration;
+      event?: CampusEvent;
+      attendee?: User;
+      checkedInAt?: string;
+    };
 
-export type ApiResponse<T> = 
+export type ApiResponse<T> =
   | { success: true; data: T }
   | { success: false; error: { code: string; message: string } };
-
-

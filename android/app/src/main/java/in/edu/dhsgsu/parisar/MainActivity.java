@@ -12,6 +12,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.webkit.GeolocationPermissions;
+import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -31,6 +32,7 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String DEFAULT_URL = "https://parisar-eight.vercel.app";
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1002;
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 1003;
 
     private WebView webView;
     private ProgressBar progressBar;
@@ -39,6 +41,7 @@ public class MainActivity extends AppCompatActivity {
 
     private String pendingGeolocationOrigin;
     private GeolocationPermissions.Callback pendingGeolocationCallback;
+    private PermissionRequest pendingCameraPermissionRequest;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -91,8 +94,9 @@ public class MainActivity extends AppCompatActivity {
         settings.setDisplayZoomControls(false);
         settings.setSupportZoom(false);
         settings.setTextZoom(100);
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        settings.setUserAgentString(settings.getUserAgentString() + " PARISAR_Android/2.2.0_Native");
+        settings.setUserAgentString(settings.getUserAgentString() + " PARISAR_Android/3.0.0_Native");
         webView.clearCache(true);
 
         webView.setWebChromeClient(new WebChromeClient() {
@@ -103,6 +107,30 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     progressBar.setVisibility(View.GONE);
                 }
+            }
+
+            // Grant WebRTC camera access when Organizer opens in-app QR Attendance Scanner
+            @Override
+            public void onPermissionRequest(final PermissionRequest request) {
+                runOnUiThread(() -> {
+                    for (String resource : request.getResources()) {
+                        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) {
+                            if (ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.CAMERA)
+                                    == PackageManager.PERMISSION_GRANTED) {
+                                request.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+                            } else {
+                                pendingCameraPermissionRequest = request;
+                                ActivityCompat.requestPermissions(
+                                        MainActivity.this,
+                                        new String[]{Manifest.permission.CAMERA},
+                                        CAMERA_PERMISSION_REQUEST_CODE
+                                );
+                            }
+                            return;
+                        }
+                    }
+                    request.deny();
+                });
             }
 
             // Triggered ONLY when user explicitly taps "Use My Location" on the Campus Map
@@ -172,6 +200,14 @@ public class MainActivity extends AppCompatActivity {
             pendingGeolocationCallback.invoke(pendingGeolocationOrigin, granted, false);
             pendingGeolocationCallback = null;
             pendingGeolocationOrigin = null;
+        } else if (requestCode == CAMERA_PERMISSION_REQUEST_CODE && pendingCameraPermissionRequest != null) {
+            boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (granted) {
+                pendingCameraPermissionRequest.grant(new String[]{PermissionRequest.RESOURCE_VIDEO_CAPTURE});
+            } else {
+                pendingCameraPermissionRequest.deny();
+            }
+            pendingCameraPermissionRequest = null;
         }
     }
 

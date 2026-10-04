@@ -7,6 +7,7 @@ import {
   Registration,
   AttendanceRecord,
   AttendanceSession,
+  TemporaryAttendanceToken,
   Certificate,
   CampusNotification,
   EventFeedback,
@@ -14,7 +15,7 @@ import {
   RegisteredDevice,
 } from '../types';
 
-// 1. RegisteredDevice Subschema & Standalone Model
+// 1. RegisteredDevice Subschema
 const RegisteredDeviceSchema = new Schema<RegisteredDevice & { userId?: string }>(
   {
     deviceId: { type: String, required: true, index: true },
@@ -27,7 +28,7 @@ const RegisteredDeviceSchema = new Schema<RegisteredDevice & { userId?: string }
   { _id: false }
 );
 
-// 2. User Schema
+// 2. User & Administrator Schema
 const UserSchema = new Schema<User>(
   {
     _id: { type: String, required: true },
@@ -35,11 +36,30 @@ const UserSchema = new Schema<User>(
     email: { type: String, required: true, unique: true, lowercase: true, index: true },
     passwordHash: { type: String },
     rollNumber: { type: String, index: true },
+    adminId: { type: String, index: true },
     department: { type: String, required: true },
     semester: { type: Number },
     role: { type: String, enum: ['student', 'organizer', 'admin'], required: true, default: 'student' },
+    adminLevel: { type: String, enum: ['SUPER_ADMIN', 'ADMIN'] },
+    permissions: { type: [String], default: [] },
+    status: { type: String, enum: ['INVITED', 'ACTIVE', 'SUSPENDED', 'REVOKED'], default: 'ACTIVE' },
+    emailVerified: { type: Boolean, default: true },
+    mfaEnabled: { type: Boolean, default: false },
+    lastLoginAt: { type: String },
+    failedLoginAttempts: { type: Number, default: 0 },
+    lockedUntil: { type: String, default: null },
+    lastPasswordChangeAt: { type: String },
+    createdBy: { type: String },
+    invitationTokenHash: { type: String, default: null },
+    invitationExpiresAt: { type: String, default: null },
+    resetTokenHash: { type: String, default: null },
+    resetExpiresAt: { type: String, default: null },
     interests: { type: [String], default: [] },
     profileImage: { type: String, default: '' },
+    bio: { type: String },
+    preferredLanguage: { type: String, enum: ['en', 'hi'], default: 'en' },
+    notificationPreferences: { type: Schema.Types.Mixed },
+    privacyPreferences: { type: Schema.Types.Mixed },
     designation: { type: String },
     organization: { type: String },
     phone: { type: String },
@@ -109,6 +129,7 @@ const CampusEventSchema = new Schema<CampusEvent>(
     description: { type: String, required: true },
     category: { type: String, required: true },
     eventMode: { type: String, enum: ['OFFLINE', 'ONLINE', 'HYBRID'], default: 'OFFLINE' },
+    onlineLink: { type: String },
     organizerId: { type: String, required: true, index: true },
     organizerName: { type: String, required: true },
     organizerEmail: { type: String, required: true },
@@ -132,13 +153,16 @@ const CampusEventSchema = new Schema<CampusEvent>(
     departmentScope: { type: String },
     certificateRequired: { type: Boolean, default: true },
     minParticipationPercent: { type: Number, default: 80 },
+    onlineAttendancePolicy: { type: Schema.Types.Mixed },
     attendanceSessionStatus: {
       type: String,
-      enum: ['NOT_STARTED', 'ACTIVE', 'CLOSED'],
+      enum: ['NOT_STARTED', 'OPEN', 'ACTIVE', 'FINALIZED', 'CLOSED'],
       default: 'NOT_STARTED',
     },
     attendanceStartedAt: { type: String },
     attendanceClosedAt: { type: String },
+    attendanceFinalizedAt: { type: String },
+    attendanceFinalizedBy: { type: String },
     rejectionReason: { type: String },
     createdAt: { type: String, required: true },
     updatedAt: { type: String, required: true },
@@ -171,43 +195,83 @@ const AttendanceRecordSchema = new Schema<AttendanceRecord>(
     eventId: { type: String, required: true, index: true },
     registrationId: { type: String, required: true, index: true },
     userId: { type: String, required: true, index: true },
+    studentId: { type: String, index: true },
     userName: { type: String, required: true },
     userRollNumber: { type: String, required: true },
     userDepartment: { type: String, required: true },
+    attendanceType: { type: String, enum: ['OFFLINE_QR', 'ONLINE_SESSION'], default: 'OFFLINE_QR' },
+    status: { type: String, enum: ['PRESENT', 'ABSENT', 'IN_PROGRESS'], default: 'PRESENT' },
     checkedInAt: { type: String, required: true },
+    checkedOutAt: { type: String },
     checkedInBy: { type: String, required: true },
-    method: { type: String, enum: ['qr', 'manual', 'online_session'], default: 'qr' },
+    method: { type: String, enum: ['qr', 'online_session', 'admin_override', 'roster', 'manual'], default: 'qr' },
+    checkpointsVerified: { type: Number, default: 0 },
+    checkpointsRequired: { type: Number, default: 2 },
+    checkpointsTotal: { type: Number, default: 3 },
+    checkpoints: { type: Schema.Types.Mixed },
     participatedMinutes: { type: Number, default: 0 },
     requiredMinutes: { type: Number, default: 0 },
     totalEventMinutes: { type: Number, default: 60 },
     participationPercent: { type: Number, default: 0 },
     sessionStatus: {
       type: String,
-      enum: ['JOINED', 'ACTIVE', 'PAUSED_DISCONNECTED', 'COMPLETED'],
+      enum: ['JOINED', 'ACTIVE', 'PAUSED', 'PAUSED_DISCONNECTED', 'RESUMED', 'ENDED', 'COMPLETED'],
       default: 'ACTIVE',
     },
     lastValidatedAt: { type: String },
     eligibleForCertificate: { type: Boolean, default: false },
+    finalizedAt: { type: String },
+    finalizedBy: { type: String },
+    createdAt: { type: String },
+    updatedAt: { type: String },
   },
   { _id: false, versionKey: false }
 );
 
-// 8. AttendanceSession Schema
-const AttendanceSessionSchema = new Schema<AttendanceSession>(
+// 8. TemporaryAttendanceToken Schema (60-second Offline QR Tokens)
+const TempAttendanceTokenSchema = new Schema<TemporaryAttendanceToken>(
   {
     id: { type: String, required: true, unique: true, index: true },
+    token: { type: String, required: true, unique: true, index: true },
     eventId: { type: String, required: true, index: true },
-    organizerId: { type: String, required: true },
-    startedAt: { type: String, required: true },
-    endedAt: { type: String },
-    mode: { type: String, enum: ['OFFLINE', 'ONLINE', 'HYBRID'], default: 'OFFLINE' },
-    minimumParticipationPercent: { type: Number, default: 80 },
-    status: { type: String, enum: ['NOT_STARTED', 'ACTIVE', 'CLOSED'], default: 'ACTIVE' },
+    studentId: { type: String, required: true, index: true },
+    registrationId: { type: String, required: true },
+    createdAt: { type: String, required: true },
+    expiresAt: { type: String, required: true },
+    usedAt: { type: String, default: null },
   },
   { versionKey: false }
 );
 
-// 9. Certificate Schema
+// 9. AttendanceSession Schema
+const AttendanceSessionSchema = new Schema<AttendanceSession>(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    eventId: { type: String, required: true, index: true },
+    studentId: { type: String, index: true },
+    registrationId: { type: String },
+    organizerId: { type: String },
+    joinedAt: { type: String },
+    leftAt: { type: String },
+    startedAt: { type: String },
+    endedAt: { type: String },
+    verifiedDuration: { type: Number, default: 0 },
+    mode: { type: String, enum: ['OFFLINE', 'ONLINE', 'HYBRID'], default: 'OFFLINE' },
+    minimumParticipationPercent: { type: Number, default: 80 },
+    checkpoints: { type: Schema.Types.Mixed },
+    checkpointsVerified: { type: Number, default: 0 },
+    checkpointsRequired: { type: Number, default: 2 },
+    checkpointsTotal: { type: Number, default: 3 },
+    status: {
+      type: String,
+      enum: ['NOT_STARTED', 'OPEN', 'ACTIVE', 'PAUSED', 'DISCONNECTED', 'RESUMED', 'ENDED', 'FINALIZED', 'CLOSED'],
+      default: 'ACTIVE',
+    },
+  },
+  { versionKey: false }
+);
+
+// 10. Certificate Schema
 const CertificateSchema = new Schema<Certificate>(
   {
     _id: { type: String, required: true },
@@ -229,7 +293,7 @@ const CertificateSchema = new Schema<Certificate>(
   { _id: false, versionKey: false }
 );
 
-// 10. CampusNotification Schema
+// 11. CampusNotification Schema
 const NotificationSchema = new Schema<CampusNotification>(
   {
     _id: { type: String, required: true },
@@ -244,7 +308,7 @@ const NotificationSchema = new Schema<CampusNotification>(
   { _id: false, versionKey: false }
 );
 
-// 11. EventFeedback Schema
+// 12. EventFeedback Schema
 const FeedbackSchema = new Schema<EventFeedback>(
   {
     _id: { type: String, required: true },
@@ -258,13 +322,14 @@ const FeedbackSchema = new Schema<EventFeedback>(
   { _id: false, versionKey: false }
 );
 
-// 12. AuditLog Schema
+// 13. AuditLog Schema
 const AuditLogSchema = new Schema<AuditLogEntry>(
   {
     _id: { type: String, required: true },
     actor: { type: String, required: true, index: true },
     actorName: { type: String },
     role: { type: String, enum: ['student', 'organizer', 'admin'], required: true },
+    adminLevel: { type: String, enum: ['SUPER_ADMIN', 'ADMIN'] },
     action: { type: String, required: true, index: true },
     entity: { type: String, required: true },
     entityId: { type: String, required: true },
@@ -285,7 +350,11 @@ export const VenueModel: Model<CampusVenue> =
   mongoose.models.ParisarVenue || mongoose.model<CampusVenue>('ParisarVenue', CampusVenueSchema);
 
 export const EventModel: Model<CampusEvent> =
-  mongoose.models.ParisarEvent || mongoose.model<CampusEvent>('ParisarEvent', CampusEventSchema);
+  mongoose.models.ParisarEvent || mongoose.model<CampusEvent>('ParisarEvent', EventSchemaCompat());
+
+function EventSchemaCompat() {
+  return CampusEventSchema;
+}
 
 export const RegistrationModel: Model<Registration> =
   mongoose.models.ParisarRegistration ||
@@ -294,6 +363,10 @@ export const RegistrationModel: Model<Registration> =
 export const AttendanceModel: Model<AttendanceRecord> =
   mongoose.models.ParisarAttendance ||
   mongoose.model<AttendanceRecord>('ParisarAttendance', AttendanceRecordSchema);
+
+export const TempAttendanceTokenModel: Model<TemporaryAttendanceToken> =
+  mongoose.models.ParisarTempAttendanceToken ||
+  mongoose.model<TemporaryAttendanceToken>('ParisarTempAttendanceToken', TempAttendanceTokenSchema);
 
 export const AttendanceSessionModel: Model<AttendanceSession> =
   mongoose.models.ParisarAttendanceSession ||

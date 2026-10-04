@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   CheckCircle2,
@@ -21,11 +21,16 @@ import {
   Clock,
   Download,
   SlidersHorizontal,
+  Camera,
+  QrCode,
+  Radio,
+  AlertCircle,
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { UserAvatar } from '../ui/UserAvatar';
 import { useToast } from '../ui/Toast';
+import { ScanVerificationResult } from '../../types';
 
 interface QRScannerViewProps {
   onNavigateToParticipants?: (eventId: string) => void;
@@ -42,10 +47,11 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
     allUsers,
     startAttendanceSession,
     closeAttendanceSession,
+    scanTemporaryAttendanceQr,
+    triggerOnlineCheckpoint,
     markRosterAttendance,
     markAllRosterPresent,
     resetRosterAttendance,
-    updateParticipantParticipation,
     issueCertificatesForEvent,
   } = useApp();
   const { showToast } = useToast();
@@ -68,6 +74,16 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'PRESENT' | 'ABSENT'>('ALL');
   const [showFinalizeModal, setShowFinalizeModal] = useState(false);
 
+  // In-App Camera Scanner State (Offline Events — Section 15)
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [manualTokenInput, setManualTokenInput] = useState('');
+  const [isScanningToken, setIsScanningToken] = useState(false);
+  const [lastScanResult, setLastScanResult] = useState<ScanVerificationResult | null>(null);
+  const html5QrCodeRef = useRef<unknown>(null);
+  const lastScannedTokenRef = useRef<string>('');
+
   const selectedEvent = events.find(e => e._id === selectedEventId) || organizerEvents[0];
 
   const isFinalized =
@@ -78,6 +94,86 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
     selectedEvent?.attendanceSessionStatus === 'ACTIVE';
   const isAdmin = currentUser.role === 'admin';
   const isLockedForCurrentUser = isFinalized && !isAdmin;
+  const isOnlineEvent = selectedEvent?.eventMode === 'ONLINE';
+
+  const stopCamera = async () => {
+    if (html5QrCodeRef.current) {
+      try {
+        const scanner = html5QrCodeRef.current as {
+          stop: () => Promise<void>;
+          clear: () => void;
+        };
+        await scanner.stop();
+        scanner.clear();
+      } catch {
+        // ignore stop errors
+      }
+      html5QrCodeRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
+
+  const handleProcessScannedToken = async (rawToken: string) => {
+    if (!selectedEvent || !rawToken.trim()) return;
+    setIsScanningToken(true);
+    const result = await scanTemporaryAttendanceQr(selectedEvent._id, rawToken.trim());
+    setIsScanningToken(false);
+    setLastScanResult(result);
+
+    if (result.status === 'SUCCESS') {
+      showToast('success', result.message, 'Attendance Marked');
+      setManualTokenInput('');
+    } else {
+      showToast('warning', result.message, 'Scan Validation Notice');
+    }
+  };
+
+  const startCamera = async () => {
+    if (!selectedEvent) return;
+    setScannerOpen(true);
+    setCameraError(null);
+    setLastScanResult(null);
+
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode');
+      // Wait a tick for #parisar-qr-reader DOM element
+      await new Promise(r => setTimeout(r, 100));
+      const scanner = new Html5Qrcode('parisar-qr-reader');
+      html5QrCodeRef.current = scanner;
+
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
+        decodedText => {
+          if (decodedText && decodedText !== lastScannedTokenRef.current) {
+            lastScannedTokenRef.current = decodedText;
+            handleProcessScannedToken(decodedText);
+            setTimeout(() => {
+              lastScannedTokenRef.current = '';
+            }, 3000);
+          }
+        },
+        () => {
+          // ignore frame parse errors while scanning
+        }
+      );
+      setCameraActive(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.toLowerCase().includes('permission') || msg.toLowerCase().includes('denied')) {
+        setCameraError('Camera permission denied. Allow camera access or paste the temporary QR token below.');
+      } else {
+        setCameraError('Camera unavailable on this device. You can verify the student 60s token below.');
+      }
+      setCameraActive(false);
+    }
+  };
 
   // All confirmed registrations for the selected event
   const eventRegistrations = useMemo(() => {
@@ -98,6 +194,18 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
         map.set(a.userId, a);
       });
     return map;
+  }, [attendance, selectedEvent]);
+
+  // Recent check-ins list
+  const recentCheckIns = useMemo(() => {
+    if (!selectedEvent) return [];
+    return attendance
+      .filter(a => a.eventId === selectedEvent._id && a.status !== 'ABSENT')
+      .sort(
+        (a, b) =>
+          new Date(b.checkedInAt).getTime() - new Date(a.checkedInAt).getTime()
+      )
+      .slice(0, 5);
   }, [attendance, selectedEvent]);
 
   // Compute roster statistics
@@ -148,14 +256,32 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
     if (res.success) {
       showToast(
         'success',
-        `Attendance session opened for "${selectedEvent.title}". You may now mark participants Present or Absent.`
+        `Attendance session opened for "${selectedEvent.title}".`
       );
     } else {
       showToast('error', res.error?.message || 'Could not start attendance session.');
     }
   };
 
-  const handleMarkParticipant = (registrationId: string, status: 'PRESENT' | 'ABSENT', studentName: string) => {
+  const handleTriggerOnlineCheckpoint = async () => {
+    if (!selectedEvent) return;
+    const res = await triggerOnlineCheckpoint(selectedEvent._id);
+    if (res.success) {
+      showToast(
+        'success',
+        `Activated Checkpoint #${res.data.checkpointNumber} (valid for 2 minutes). Registered online students must confirm participation now.`,
+        '2-Minute Checkpoint Activated'
+      );
+    } else {
+      showToast('error', res.error.message, 'Checkpoint Error');
+    }
+  };
+
+  const handleMarkParticipant = (
+    registrationId: string,
+    status: 'PRESENT' | 'ABSENT',
+    studentName: string
+  ) => {
     if (!selectedEvent) return;
     const res = markRosterAttendance(selectedEvent._id, registrationId, status);
     if (res.success) {
@@ -192,6 +318,8 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
 
   const handleConfirmFinalize = () => {
     if (!selectedEvent) return;
+    stopCamera();
+    setScannerOpen(false);
     const res = closeAttendanceSession(selectedEvent._id);
     setShowFinalizeModal(false);
     if (res.success) {
@@ -223,7 +351,6 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
       'Department',
       'Attendance Status',
       'Verification Method',
-      'Participated Minutes',
       'Participation %',
       'Certificate Eligible',
       'Timestamp',
@@ -237,8 +364,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
         `"${reg.userEmail}"`,
         `"${reg.userDepartment}"`,
         isPresent ? 'PRESENT' : 'ABSENT',
-        att?.method || (isPresent ? 'roster' : 'N/A'),
-        att?.participatedMinutes ?? (isPresent ? 180 : 0),
+        att?.method || (isPresent ? 'qr' : 'N/A'),
         `${att?.participationPercent ?? (isPresent ? 100 : 0)}%`,
         att?.eligibleForCertificate ? 'ELIGIBLE' : isPresent ? 'ELIGIBLE' : 'NOT_ELIGIBLE',
         att?.checkedInAt ? new Date(att.checkedInAt).toLocaleString('en-IN') : 'Not Marked',
@@ -281,16 +407,18 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
           <div className="flex items-center gap-2 mb-1.5">
             <span className="w-2 h-2 rounded-full bg-[#2E6B4E]" />
             <span className="text-xs font-mono uppercase tracking-widest text-[#B6533C] font-semibold">
-              {selectedEvent.eventMode === 'ONLINE'
-                ? 'Online Session Participation & Roster'
-                : 'Official Roster-Based Attendance Console'}
+              {isOnlineEvent
+                ? 'Online Session 2-Minute Checkpoint Console'
+                : 'Offline Dynamic 60s QR Scanner & Roster Console'}
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-serif font-bold text-[#18212B]">
             Event Attendance Management
           </h1>
           <p className="text-sm text-[#4E5A67] mt-1">
-            Mark and finalize participant attendance directly from the verified university registration roster.
+            {isOnlineEvent
+              ? 'Manage online session check-ins and trigger 2-minute live participation verification checkpoints.'
+              : 'Scan student 60-second temporary attendance QR codes or manage the registered participant roster.'}
           </p>
         </div>
 
@@ -302,7 +430,12 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
             <select
               aria-label="Select Event for Attendance"
               value={selectedEvent._id}
-              onChange={e => setSelectedEventId(e.target.value)}
+              onChange={e => {
+                stopCamera();
+                setScannerOpen(false);
+                setLastScanResult(null);
+                setSelectedEventId(e.target.value);
+              }}
               className="w-full px-3.5 py-2.5 rounded-lg bg-[#FCFAF5] border border-[#D8D0C2] text-sm font-medium text-[#18212B] focus:outline-none focus:border-[#18212B]"
             >
               {organizerEvents.map(evt => (
@@ -343,7 +476,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
               ) : (
                 <Badge variant="warning">Attendance Not Started</Badge>
               )}
-              <Badge variant={selectedEvent.eventMode === 'ONLINE' ? 'info' : 'neutral'}>
+              <Badge variant={isOnlineEvent ? 'info' : 'neutral'}>
                 {selectedEvent.eventMode || 'OFFLINE'} EVENT
               </Badge>
             </div>
@@ -358,7 +491,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
                 })}
               </span>
               <span className="inline-flex items-center gap-1.5">
-                {selectedEvent.eventMode === 'ONLINE' ? (
+                {isOnlineEvent ? (
                   <Globe className="w-3.5 h-3.5 text-[#365B6D]" />
                 ) : (
                   <MapPin className="w-3.5 h-3.5 text-[#2E6B4E]" />
@@ -367,7 +500,9 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
               </span>
               <span className="inline-flex items-center gap-1.5 font-mono">
                 <Clock className="w-3.5 h-3.5 text-[#B08A4A]" />
-                Min Threshold: {selectedEvent.minParticipationPercent ?? 80}%
+                {isOnlineEvent
+                  ? `Checkpoints Required: ${selectedEvent.onlinePolicy?.requiredCheckpoints ?? 2} of ${selectedEvent.onlinePolicy?.totalCheckpoints ?? 3}`
+                  : 'Temporary Student QR: 60s Expiry'}
               </span>
             </div>
 
@@ -393,11 +528,40 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
             )}
           </div>
 
-          {/* Primary Session & Bulk Controls */}
+          {/* Primary Session, Scanner & Checkpoint Controls */}
           <div className="flex flex-wrap items-center gap-2.5">
             {!isOpen && !isFinalized && (
               <Button variant="primary" size="md" onClick={handleStartAttendance}>
                 <Play className="w-4 h-4" /> Start Attendance
+              </Button>
+            )}
+
+            {!isOnlineEvent && !isFinalized && (
+              <Button
+                variant={scannerOpen ? 'dark' : 'primary'}
+                size="md"
+                onClick={() => {
+                  if (scannerOpen) {
+                    stopCamera();
+                    setScannerOpen(false);
+                  } else {
+                    if (!isOpen) handleStartAttendance();
+                    startCamera();
+                  }
+                }}
+              >
+                <Camera className="w-4 h-4" />
+                {scannerOpen ? 'Close Scanner' : 'Open Scanner'}
+              </Button>
+            )}
+
+            {selectedEvent.eventMode !== 'OFFLINE' && !isFinalized && (
+              <Button
+                variant="primary"
+                size="md"
+                onClick={handleTriggerOnlineCheckpoint}
+              >
+                <Radio className="w-4 h-4" /> Trigger 2-Min Checkpoint
               </Button>
             )}
 
@@ -416,7 +580,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
               disabled={isLockedForCurrentUser || stats.presentCount === 0}
               onClick={handleResetAttendance}
             >
-              <RotateCcw className="w-4 h-4" /> Reset / Undo
+              <RotateCcw className="w-4 h-4" /> Reset
             </Button>
 
             {!isFinalized && (
@@ -439,6 +603,153 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ============================================================ */}
+      {/* IN-APP ORGANIZER CAMERA SCANNER (OFFLINE EVENTS — SEC 15)    */}
+      {/* ============================================================ */}
+      {scannerOpen && !isOnlineEvent && (
+        <div className="bg-[#FCFAF5] border-2 border-[#18212B] rounded-xl p-5 mb-6 shadow-[4px_4px_0_0_#18212B]">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Camera Viewport + Manual Token Fallback */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <QrCode className="w-5 h-5 text-[#B6533C]" />
+                  <h3 className="text-base font-extrabold text-[#18212B]">
+                    Organizer In-App Attendance Scanner
+                  </h3>
+                </div>
+                <span className="text-[11px] font-mono font-bold text-[#2F613B]">
+                  {cameraActive ? '● CAMERA ACTIVE' : '● READY TO VERIFY'}
+                </span>
+              </div>
+
+              <div className="bg-[#18212B] rounded-lg overflow-hidden border border-[#18212B]">
+                <div
+                  id="parisar-qr-reader"
+                  style={{ width: '100%', minHeight: cameraActive ? 280 : 0 }}
+                />
+
+                {!cameraActive && (
+                  <div className="p-6 text-center space-y-2">
+                    <Camera className="w-10 h-10 text-[#B6533C] mx-auto" />
+                    <p className="text-xs text-[#FCFAF5]">
+                      {cameraError ||
+                        'Point camera at the student’s 60-second temporary attendance QR code.'}
+                    </p>
+                    <Button variant="primary" size="sm" onClick={startCamera}>
+                      <Camera className="w-4 h-4" /> Start Camera
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Token Verification Input for Desktop / Web Testing */}
+              <form
+                onSubmit={e => {
+                  e.preventDefault();
+                  handleProcessScannedToken(manualTokenInput);
+                }}
+                className="flex items-center gap-2"
+              >
+                <input
+                  type="text"
+                  placeholder="Or paste student 60s temporary QR token (PAT_...)"
+                  value={manualTokenInput}
+                  onChange={e => setManualTokenInput(e.target.value)}
+                  className="flex-1 px-3 py-2 rounded-lg bg-[#F4F0E8] border border-[#D8D0C2] text-xs font-mono text-[#18212B] focus:outline-none focus:border-[#18212B]"
+                />
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  isLoading={isScanningToken}
+                >
+                  Verify Token
+                </Button>
+              </form>
+            </div>
+
+            {/* Right: Scan Result Display + Recent Check-Ins */}
+            <div className="space-y-4">
+              <div className="text-xs font-mono font-bold uppercase tracking-wider text-[#62605B]">
+                Live Scan Verification Result
+              </div>
+
+              {lastScanResult ? (
+                <div
+                  className={`p-4 rounded-lg border-2 space-y-2 ${
+                    lastScanResult.status === 'SUCCESS'
+                      ? 'bg-[#EBF3ED] border-[#2F613B] text-[#2F613B]'
+                      : lastScanResult.status === 'ALREADY_PRESENT' ||
+                        lastScanResult.status === 'DUPLICATE'
+                      ? 'bg-[#FBF4E8] border-[#B08A4A] text-[#8F5E15]'
+                      : 'bg-[#FDF0EE] border-[#A83226] text-[#A83226]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 font-extrabold text-sm">
+                    {lastScanResult.status === 'SUCCESS' ? (
+                      <CheckCircle2 className="w-5 h-5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 shrink-0" />
+                    )}
+                    <span>{lastScanResult.message}</span>
+                  </div>
+
+                  {lastScanResult.registration && (
+                    <div className="text-xs text-[#18212B] font-mono pt-1 border-t border-current/20">
+                      <div>
+                        Student: <strong>{lastScanResult.registration.userName}</strong>
+                      </div>
+                      <div>
+                        Roll No: <strong>{lastScanResult.registration.userRollNumber}</strong>
+                      </div>
+                      <div>Dept: {lastScanResult.registration.userDepartment}</div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 rounded-lg bg-[#EAE5DB]/60 border border-[#B9B4AA] text-xs text-[#62605B]">
+                  Scan a student&apos;s 60-second temporary QR code. The scanner validates registration, event match, 60s expiry, and one-time token use, then stays open for the next student.
+                </div>
+              )}
+
+              {/* Recent Check-Ins */}
+              <div className="space-y-2">
+                <div className="text-xs font-mono font-bold uppercase tracking-wider text-[#62605B]">
+                  Recent Check-Ins ({recentCheckIns.length})
+                </div>
+                {recentCheckIns.length === 0 ? (
+                  <div className="text-xs text-[#7A8591]">No students checked in yet.</div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {recentCheckIns.map(rec => (
+                      <div
+                        key={rec._id}
+                        className="px-3 py-2 bg-[#F4F0E8] border border-[#D8D0C2] rounded-md flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <span className="font-bold text-[#18212B]">{rec.userName}</span>{' '}
+                          <span className="font-mono text-[#62605B]">
+                            ({rec.userRollNumber})
+                          </span>
+                        </div>
+                        <span className="font-mono text-[11px] text-[#2F613B] font-bold">
+                          {new Date(rec.checkedInAt).toLocaleTimeString('en-IN', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 4 Live Summary Cards: Registered, Present, Absent, Attendance % */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -526,11 +837,12 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
       <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl overflow-hidden shadow-sm">
         <div className="px-5 py-3.5 bg-[#EAE3D5]/60 border-b border-[#D8D0C2] flex items-center justify-between">
           <span className="text-xs font-mono uppercase tracking-wider font-semibold text-[#18212B]">
-            Registered Students List ({filteredRoster.length})
+            Registered Participants ({filteredRoster.length})
           </span>
           {selectedEvent.eventMode !== 'OFFLINE' && (
             <span className="text-xs font-mono text-[#365B6D]">
-              Online Session Auto-Threshold: {selectedEvent.minParticipationPercent ?? 80}% Duration
+              Online Checkpoint Policy: {selectedEvent.onlinePolicy?.requiredCheckpoints ?? 2} of{' '}
+              {selectedEvent.onlinePolicy?.totalCheckpoints ?? 3} Checkpoints (2-Min Window)
             </span>
           )}
         </div>
@@ -553,8 +865,8 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
               const isPresent = Boolean(att && att.status !== 'ABSENT');
               const studentObj = allUsers.find(u => u._id === reg.userId);
               const partPct = att?.participationPercent ?? (isPresent ? 100 : 0);
-              const partMins = att?.participatedMinutes ?? 0;
-              const reqMins = att?.requiredMinutes ?? 144;
+              const verifiedCps = att?.verifiedCheckpoints?.length ?? 0;
+              const reqCps = selectedEvent.onlinePolicy?.requiredCheckpoints ?? 2;
               const isEligible =
                 att?.eligibleForCertificate ??
                 (isPresent && partPct >= (selectedEvent.minParticipationPercent ?? 80));
@@ -585,11 +897,14 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
                         ) : (
                           <Badge variant="neutral">ABSENT</Badge>
                         )}
+                        {att?.method === 'qr' && (
+                          <Badge variant="info">60S QR VERIFIED</Badge>
+                        )}
                         {att?.method === 'admin_override' && (
                           <Badge variant="warning">ADMIN OVERRIDE</Badge>
                         )}
                         {att?.method === 'online_session' && (
-                          <Badge variant="info">ONLINE SESSION</Badge>
+                          <Badge variant="info">ONLINE CHECKPOINTS</Badge>
                         )}
                       </div>
 
@@ -611,11 +926,11 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
                         )}
                       </div>
 
-                      {/* Online / Hybrid Session Duration Telemetry */}
-                      {selectedEvent.eventMode !== 'OFFLINE' && att && isPresent && (
+                      {/* Online / Hybrid Checkpoint Telemetry */}
+                      {selectedEvent.eventMode !== 'OFFLINE' && att && (
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-mono">
                           <span className="px-2 py-0.5 rounded bg-[#F4F0E8] border border-[#D8D0C2] text-[#18212B]">
-                            Verified Duration: {partMins} mins (Required: {reqMins} mins)
+                            Checkpoints Verified: {verifiedCps} / {reqCps} Required
                           </span>
                           <span
                             className={`px-2 py-0.5 rounded font-semibold ${
@@ -625,22 +940,8 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
                             }`}
                           >
                             {partPct}% —{' '}
-                            {isEligible ? 'CERTIFICATE ELIGIBLE' : 'BELOW THRESHOLD'}
+                            {isEligible ? 'CERTIFICATE ELIGIBLE' : 'INCOMPLETE CHECKPOINTS'}
                           </span>
-                          {!isLockedForCurrentUser && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateParticipantParticipation(
-                                  att._id,
-                                  (att.participatedMinutes || 60) + 45
-                                )
-                              }
-                              className="px-2 py-0.5 rounded bg-[#18212B] text-[#FCFAF5] hover:bg-[#2E6B4E] transition-colors"
-                            >
-                              +45m Verified Duration
-                            </button>
-                          )}
                         </div>
                       )}
                     </div>
@@ -687,7 +988,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
         )}
       </div>
 
-      {/* Finalize Attendance Confirmation Modal (Section 4) */}
+      {/* Finalize Attendance Confirmation Modal */}
       {showFinalizeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#18212B]/60 backdrop-blur-xs">
           <div className="bg-[#FCFAF5] border border-[#D8D0C2] rounded-xl max-w-md w-full p-6 shadow-xl">
@@ -725,7 +1026,7 @@ export const QRScannerView: React.FC<QRScannerViewProps> = ({
                 Cancel
               </Button>
               <Button variant="destructive" size="sm" onClick={handleConfirmFinalize}>
-                <Lock className="w-3.5 h-3.5" /> Finalize & Lock Attendance
+                <Lock className="w-3.5 h-3.5" /> Finalize &amp; Lock Attendance
               </Button>
             </div>
           </div>

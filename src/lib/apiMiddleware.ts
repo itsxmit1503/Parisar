@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyJWT, extractBearerToken, JWTPayload } from './jwt';
-import { UserRole, CampusEvent } from '../types';
+import { getSharedDb } from './serverStore';
+import { UserRole, AdminPermission, CampusEvent, ALL_ADMIN_PERMISSIONS } from '../types';
 
 export const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
@@ -31,13 +32,18 @@ export function err(code: string, message: string, status: number = 400): NextRe
 }
 
 /**
- * Extracts and verifies the JWT token from Authorization header or cookie.
- * Returns { user: JWTPayload } or a NextResponse 401 error.
+ * Extracts and verifies the JWT token from Authorization header or HttpOnly cookie,
+ * AND cross-checks the authoritative server database for live role, status, and permissions.
+ * Never trusts client-submitted role/adminLevel/permissions.
  */
 export function requireAuth(
   req: NextRequest
 ): { authenticated: true; user: JWTPayload } | { authenticated: false; response: NextResponse } {
-  const authHeader = req.headers.get('authorization') || req.cookies.get('parisar_token')?.value || null;
+  const authHeader =
+    req.headers.get('authorization') ||
+    req.cookies.get('parisar_token')?.value ||
+    req.cookies.get('parisar_admin_session')?.value ||
+    null;
   const token = extractBearerToken(authHeader);
 
   if (!token) {
@@ -55,7 +61,47 @@ export function requireAuth(
     };
   }
 
-  return { authenticated: true, user: decoded };
+  // Always check authoritative server database for account status & live role
+  const db = getSharedDb();
+  const dbUser = db.users.find(u => u._id === decoded.sub || u.email.toLowerCase() === decoded.email.toLowerCase());
+  if (!dbUser) {
+    return {
+      authenticated: false,
+      response: err('ACCOUNT_NOT_FOUND', 'Authenticated account no longer exists.', 401),
+    };
+  }
+
+  if (dbUser.status === 'SUSPENDED') {
+    return {
+      authenticated: false,
+      response: err('ACCOUNT_SUSPENDED', 'Your administrator account has been suspended.', 403),
+    };
+  }
+
+  if (dbUser.status === 'REVOKED') {
+    return {
+      authenticated: false,
+      response: err('ACCOUNT_REVOKED', 'Your account access has been revoked.', 403),
+    };
+  }
+
+  const authoritativeUser: JWTPayload = {
+    ...decoded,
+    sub: dbUser._id,
+    email: dbUser.email,
+    rollNumber: dbUser.rollNumber,
+    adminId: dbUser.adminId,
+    role: dbUser.role,
+    adminLevel: dbUser.adminLevel,
+    permissions:
+      dbUser.adminLevel === 'SUPER_ADMIN'
+        ? [...ALL_ADMIN_PERMISSIONS]
+        : dbUser.permissions || [],
+    status: dbUser.status || 'ACTIVE',
+    organizerStatus: dbUser.organizerStatus,
+  };
+
+  return { authenticated: true, user: authoritativeUser };
 }
 
 /**
@@ -75,7 +121,7 @@ export function requireRole(
       authorized: false,
       response: err(
         'FORBIDDEN_ROLE',
-        `Access denied. Required role: ${allowedRoles.join(' or ')}.`,
+        'You do not have permission to perform this action.',
         403
       ),
     };
@@ -84,8 +130,63 @@ export function requireRole(
   return { authorized: true, user: authResult.user };
 }
 
-export function requireAdmin(req: NextRequest) {
-  return requireRole(req, ['admin']);
+/**
+ * Verifies the user is an active University Administrator and optionally enforces a granular AdminPermission.
+ * SUPER_ADMIN automatically has all permissions.
+ */
+export function requireAdmin(
+  req: NextRequest,
+  requiredPermission?: AdminPermission
+): { authorized: true; user: JWTPayload } | { authorized: false; response: NextResponse } {
+  const roleCheck = requireRole(req, ['admin']);
+  if (!roleCheck.authorized) return roleCheck;
+
+  const { user } = roleCheck;
+  if (user.status && user.status !== 'ACTIVE') {
+    return {
+      authorized: false,
+      response: err('ADMIN_NOT_ACTIVE', `Your administrator account is ${user.status.toLowerCase()}.`, 403),
+    };
+  }
+
+  if (requiredPermission && user.adminLevel !== 'SUPER_ADMIN') {
+    const perms = user.permissions || [];
+    if (!perms.includes(requiredPermission)) {
+      return {
+        authorized: false,
+        response: err(
+          'INSUFFICIENT_ADMIN_PERMISSION',
+          `You do not have permission (${requiredPermission}) to perform this action.`,
+          403
+        ),
+      };
+    }
+  }
+
+  return { authorized: true, user };
+}
+
+/**
+ * Enforces that the caller is an active SUPER_ADMIN (or holds MANAGE_ADMINS where appropriate).
+ */
+export function requireSuperAdmin(
+  req: NextRequest
+): { authorized: true; user: JWTPayload } | { authorized: false; response: NextResponse } {
+  const adminCheck = requireAdmin(req, 'MANAGE_ADMINS');
+  if (!adminCheck.authorized) return adminCheck;
+
+  if (adminCheck.user.adminLevel !== 'SUPER_ADMIN') {
+    return {
+      authorized: false,
+      response: err(
+        'SUPER_ADMIN_REQUIRED',
+        'Only an active University Super Administrator can perform this operation.',
+        403
+      ),
+    };
+  }
+
+  return adminCheck;
 }
 
 export function requireOrganizer(req: NextRequest) {
@@ -94,6 +195,18 @@ export function requireOrganizer(req: NextRequest) {
 
 export function requireStudent(req: NextRequest) {
   return requireRole(req, ['student', 'organizer', 'admin']);
+}
+
+/**
+ * Checks whether a user object has a specific AdminPermission.
+ */
+export function hasAdminPermission(
+  user: { role?: UserRole; adminLevel?: string; permissions?: AdminPermission[] } | null | undefined,
+  permission: AdminPermission
+): boolean {
+  if (!user || user.role !== 'admin') return false;
+  if (user.adminLevel === 'SUPER_ADMIN') return true;
+  return Array.isArray(user.permissions) && user.permissions.includes(permission);
 }
 
 /**

@@ -52,12 +52,13 @@ export type ActiveTab =
   | 'organizer-certificates'
   | 'organizer-profile'
   | 'organizer-pending'
-  // Admin Panel (Dashboard, Organizer Requests, Events, Participants, Attendance, Settings)
+  // Admin Panel (Dashboard, Organizer Requests, Events, Participants, Attendance, Administrators, Settings)
   | 'admin-dashboard'
   | 'admin-organizer-requests'
   | 'admin-moderation'
   | 'admin-participants'
   | 'admin-attendance'
+  | 'admin-administrators'
   | 'admin-users'
   | 'admin-venues'
   | 'admin-audit'
@@ -134,7 +135,9 @@ export const Navbar: React.FC<NavbarProps> = ({
       if (currentUser.organizerStatus === 'REJECTED') return 'ORGANIZER (REJECTED)';
       return 'VERIFIED ORGANIZER';
     }
-    return 'UNIVERSITY ADMINISTRATOR';
+    return currentUser.adminLevel === 'SUPER_ADMIN'
+      ? 'SUPER ADMINISTRATOR'
+      : 'UNIVERSITY ADMINISTRATOR';
   };
 
   const handleViewProfile = () => {
@@ -337,6 +340,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className={desktopNavBtnClass(activeTab === 'admin-attendance')}
                   >
                     Attendance
+                  </button>
+                  <button
+                    onClick={() => handleNavClick('admin-administrators')}
+                    className={desktopNavBtnClass(activeTab === 'admin-administrators')}
+                  >
+                    Administrators
                   </button>
                   <button
                     onClick={() => handleNavClick('admin-venues')}
