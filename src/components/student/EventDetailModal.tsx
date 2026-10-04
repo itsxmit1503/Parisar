@@ -444,16 +444,21 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
             {eventMode === 'OFFLINE' ? (
               <div className="text-xs text-[#18212B] leading-relaxed space-y-2">
                 <p>
-                  This is a physical campus event at <strong>{event.venue}</strong>. Open your registration pass and click <strong>Submit Attendance</strong> to generate a temporary 60-second one-time QR code for the organizer to scan.
+                  This is a physical campus event at <strong>{event.venue}</strong>. When the organizer opens the attendance session, click <strong>View Pass</strong> and generate your 60-second one-time QR code for the organizer to scan.
                 </p>
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1 font-mono text-[11px]">
                   <span>
                     Status:{' '}
-                    <strong className={userAttendance ? 'text-[#2F613B]' : 'text-[#B26B16]'}>
-                      {userAttendance ? 'PRESENT (VERIFIED BY ORGANIZER SCAN)' : 'REGISTERED — READY TO SUBMIT ATTENDANCE'}
+                    <strong className={userAttendance ? 'text-[#2F613B]' : isSessionActive ? 'text-[#B26B16]' : 'text-[#62605B]'}>
+                      {userAttendance
+                        ? 'PRESENT ✓ (VERIFIED BY ORGANIZER)'
+                        : isSessionActive
+                        ? 'ATTENDANCE OPEN — READY TO SUBMIT QR'
+                        : 'REGISTERED — WAITING FOR ORGANIZER TO START ATTENDANCE'}
                     </strong>
                   </span>
-                  {!userAttendance && userRegistration && onViewPass && (
+                  {/* Show QR pass button ONLY when session is active and student not yet marked */}
+                  {!userAttendance && userRegistration && onViewPass && isSessionActive && (
                     <Button
                       variant="primary"
                       size="sm"
@@ -462,6 +467,18 @@ export const EventDetailModal: React.FC<EventDetailModalProps> = ({
                     >
                       Submit Attendance (60s QR)
                     </Button>
+                  )}
+                  {/* Attendance not yet started */}
+                  {!userAttendance && !isSessionActive && (
+                    <span className="px-2 py-1 bg-[#EAE5DB] rounded-[3px] border border-[#B9B4AA] text-[#62605B] text-[11px]">
+                      Attendance has not started yet.
+                    </span>
+                  )}
+                  {/* Already marked present */}
+                  {userAttendance && (
+                    <span className="px-2 py-1 bg-[#EBF3ED] rounded-[3px] border border-[#2F613B]/30 text-[#2F613B] font-bold text-[11px]">
+                      ✓ Attendance Recorded
+                    </span>
                   )}
                 </div>
               </div>

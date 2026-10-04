@@ -99,6 +99,10 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
   );
   const isPresentMarked = Boolean(registration.checkedInAt || (matchedAtt && matchedAtt.status !== 'ABSENT'));
   const isOfflineOrHybrid = (event.eventMode || 'OFFLINE') !== 'ONLINE';
+  // Only show QR section when the organizer's attendance session is open
+  const isSessionActive =
+    event.attendanceSessionStatus === 'OPEN' ||
+    event.attendanceSessionStatus === 'ACTIVE';
 
   const handleSubmitAttendanceQr = async () => {
     setQrError(null);
@@ -113,14 +117,23 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
     }
 
     try {
-      const dataUrl = await QRCode.toDataURL(res.data.token, {
-        width: 240,
-        margin: 2,
-        color: {
-          dark: '#18212B',
-          light: '#FCFAF5',
-        },
-      });
+      // Primary: try canvas-based PNG data URL
+      let dataUrl: string;
+      try {
+        dataUrl = await QRCode.toDataURL(res.data.token, {
+          width: 240,
+          margin: 2,
+          color: { dark: '#18212B', light: '#FCFAF5' },
+        });
+      } catch {
+        // Fallback: generate SVG string and convert to data URL
+        const svgStr = await QRCode.toString(res.data.token, {
+          type: 'svg',
+          margin: 2,
+          color: { dark: '#18212B', light: '#FCFAF5' },
+        });
+        dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
+      }
       setTempQrDataUrl(dataUrl);
       setTempToken(res.data.token);
       setExpiresAtMs(new Date(res.data.expiresAt).getTime());
@@ -129,8 +142,9 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
         'Temporary 60-second attendance QR generated. Show this to the event organizer.',
         'Attendance QR Active (60s)'
       );
-    } catch {
-      setQrError('Could not render QR image.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setQrError(`Could not render QR image: ${msg}`);
     }
   };
 
@@ -208,10 +222,21 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
               <div className="py-3 space-y-1.5">
                 <CheckCircle2 className="w-8 h-8 text-[#2F613B] mx-auto" />
                 <div className="text-sm font-extrabold text-[#2F613B]">
-                  Attendance Verified &amp; Recorded
+                  ✓ Attendance Recorded
                 </div>
                 <p className="text-xs text-[#62605B]">
                   Your physical attendance for this event has been verified and locked.
+                </p>
+              </div>
+            ) : !isSessionActive ? (
+              /* Attendance session not yet open */
+              <div className="py-3 space-y-1.5">
+                <Clock className="w-7 h-7 text-[#B08A4A] mx-auto" />
+                <div className="text-sm font-bold text-[#18212B]">
+                  Attendance Has Not Started Yet
+                </div>
+                <p className="text-xs text-[#62605B] max-w-sm mx-auto">
+                  The organizer will open the attendance session at the event venue. This pass will become active for QR generation once the session is open.
                 </p>
               </div>
             ) : tempQrDataUrl && secondsRemaining > 0 ? (
@@ -252,19 +277,20 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
                 )}
               </div>
             ) : (
+              /* Session is OPEN but no QR generated yet (or QR expired) */
               <div className="space-y-2.5 py-1">
                 <div className="text-xs font-extrabold uppercase font-mono text-[#18212B] flex items-center justify-center gap-1.5">
                   <QrCode className="w-4 h-4 text-[#B6533C]" />
                   <span>
                     {tempToken && secondsRemaining === 0
                       ? 'Temporary Attendance QR Expired'
-                      : 'Offline Event Attendance Verification'}
+                      : 'Attendance Session Open — Generate QR Now'}
                   </span>
                 </div>
                 <p className="text-xs text-[#62605B] max-w-sm mx-auto leading-relaxed">
                   {tempToken && secondsRemaining === 0
-                    ? 'Your previous 60-second QR token has expired. Generate a fresh attendance QR when the organizer is ready to scan.'
-                    : 'Click below at the event venue to generate a dynamic, one-time 60-second QR code for the organizer to scan.'}
+                    ? 'Your previous 60-second QR token has expired. Generate a fresh attendance QR for the organizer to scan.'
+                    : 'The organizer has started the attendance session. Generate your one-time 60-second QR code and show it to the organizer.'}
                 </p>
                 {qrError && (
                   <div className="text-[11px] font-bold text-[#A83226] bg-[#FDF0EE] p-2 rounded border border-[#E9BFB8]">
@@ -284,7 +310,7 @@ export const EventPassModal: React.FC<EventPassModalProps> = ({
                   }
                   onClick={handleSubmitAttendanceQr}
                 >
-                  {tempToken ? 'Generate New 60s Attendance QR' : 'Submit Attendance'}
+                  {tempToken ? 'Generate New 60s Attendance QR' : 'Generate Attendance QR'}
                 </Button>
               </div>
             )}
